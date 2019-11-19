@@ -5,14 +5,30 @@ from __future__ import print_function
 
 import collections
 
+import gym
+import gin
 import numpy as np
 import tensorflow as tf
+
+from atari_lib import AtariPreprocessing
 
 
 ExpertNetworkType = collections.namedtuple(
     'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
 AMNNetworkType = collections.namedtuple(
     'amn_network', ['output', 'q_softmax', 'features'])
+
+
+@gin.configurable
+def create_atari_environments(games_names=None, sticky_actions=True):
+  assert games_names is not None
+  game_version = 'v0' if sticky_actions else 'v4'
+
+  for game_name in games_names:
+      full_game_name = '{}NoFrameskip-{}'.format(game_name, game_version)
+      env = gym.make(full_game_name).env
+      env = AtariPreprocessing(env)
+      yield env
 
 
 class ExpertNetwork(tf.keras.Model):

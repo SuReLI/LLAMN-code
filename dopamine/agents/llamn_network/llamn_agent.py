@@ -6,7 +6,7 @@ from __future__ import print_function
 import os
 
 
-from dopamine.discrete_domains import llamn_atari_lib
+from dopamine.discrete_domains import atari_lib, llamn_atari_lib
 import numpy as np
 import tensorflow as tf
 
@@ -14,13 +14,13 @@ import gin.tf
 
 
 # These are aliases which are used by other classes.
-NATURE_DQN_OBSERVATION_SHAPE = llamn_atari_lib.NATURE_DQN_OBSERVATION_SHAPE
-NATURE_DQN_DTYPE = llamn_atari_lib.NATURE_DQN_DTYPE
+NATURE_DQN_OBSERVATION_SHAPE = atari_lib.NATURE_DQN_OBSERVATION_SHAPE
+NATURE_DQN_DTYPE = atari_lib.NATURE_DQN_DTYPE
 
 
 @gin.configurable
 class AMNAgent(object):
-  """An implementation of the DQN agent."""
+  """An implementation of the LLAMN agent."""
 
   def __init__(self,
                sess,
@@ -31,8 +31,9 @@ class AMNAgent(object):
                replay_memory,
                feature_weight,
                ewc_weight,
-               observation_shape=llamn_atari_lib.NATURE_DQN_OBSERVATION_SHAPE,
-               observation_dtype=llamn_atari_lib.NATURE_DQN_DTYPE,
+               observation_shape=atari_lib.NATURE_DQN_OBSERVATION_SHAPE,
+               observation_dtype=atari_lib.NATURE_DQN_DTYPE,
+               stack_size=atari_lib.NATURE_DQN_STACK_SIZE,
                network=llamn_atari_lib.AMNNetwork,
                tf_device='/cpu:*',
                eval_mode=False,
@@ -63,6 +64,7 @@ class AMNAgent(object):
     self.ewc_weight = ewc_weight
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
+    self.stack_size = stack_size
     self.network = network
     self.eval_mode = eval_mode
     self.training_steps = 0
@@ -72,9 +74,9 @@ class AMNAgent(object):
     self.allow_partial_reload = allow_partial_reload
 
     with tf.device(tf_device):
-      # Create a placeholder for the state input to the DQN network.
+      # Create a placeholder for the state input to the AMN network.
       # The last axis indicates the number of consecutive frames stacked.
-      state_shape = (1,) + self.observation_shape
+      state_shape = (1,) + self.observation_shape + (stack_size, )
       self.state = np.zeros(state_shape)
       self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
                                      name='state_ph')
@@ -100,6 +102,8 @@ class AMNAgent(object):
     self.convnet = self._create_network(name='Online')
     self._net_outputs = self.convnet(self.state_ph)
 
+    self._expert_outputs = [expert(self.state_ph) for expert in self.experts]
+
     self.output = self._net_outputs.output
     self.q_softmax = self._net_outputs.q_softmax
     self.features = self._net_outputs.features
@@ -108,14 +112,18 @@ class AMNAgent(object):
     self.q_argmax = tf.argmax(self.q_softmax, axis=1)[0]
 
   def _build_xent_loss(self, i_task):
-    expert_output = self.experts[i]._replay
-    return
+    expert_output = self._expert_outputs[i_task].q_values
+    expert_softmax = tf.nn.softmax(expert_output, axis=1)
+    loss = expert_softmax * tf.log(self.q_softmax)
+    return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_l2_loss(self, i_task):
-    return
+    expert_features = self._expert_outputs[i_task].features
+    loss = tf.nn.l2_loss(expert_features - self.features)
+    return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_ewc_loss(self):
-    return
+    return 0
 
   def _build_train_op(self):
     loss = 0
@@ -125,13 +133,17 @@ class AMNAgent(object):
       xent_loss = self._build_xent_loss(i_task)
       l2_loss = self._build_l2_loss(i_task)
 
-      loss += self.ewc_weight * (xent_loss + self.feature_weight * l2_loss)
+      loss += xent_loss + self.feature_weight * l2_loss
 
-    ewc_loss = self._build_ewc_loss()
+    # ewc_loss = self._build_ewc_loss()
+
+    # loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
     if self.summary_writer is not None:
       with tf.variable_scope('Losses'):
         tf.summary.scalar('Loss', tf.reduce_mean(loss))
+    print("loss :\n", loss, '\n\n', '-'*200, '\n')    # debug
+    print("tf.reduce_mean(loss) :\n", tf.reduce_mean(loss), '\n\n', '-'*200, '\n')    # debug
     return self.optimizer.minimize(tf.reduce_mean(loss))
 
   def begin_episode(self, state):
