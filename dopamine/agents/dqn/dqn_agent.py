@@ -240,8 +240,8 @@ class DQNAgent(object):
     # _network_template instantiates the model and returns the network object.
     # The network object can be used to generate different outputs in the graph.
     # At each call to the network, the parameters will be reused.
-    self.online_convnet = self._create_network(name='Online')
-    self.target_convnet = self._create_network(name='Target')
+    self.online_convnet = self._create_network(name='online')
+    self.target_convnet = self._create_network(name='target')
     self._net_outputs = self.online_convnet(self.state_ph)
     # TODO(bellemare): Ties should be broken. They are unlikely to happen when
     # using a deep network, but may affect performance with a linear

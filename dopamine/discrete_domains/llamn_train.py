@@ -20,23 +20,23 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import warnings
+warnings.filterwarnings('ignore', r".*Passing \(type, 1\).*")
 
 
 from absl import app
 from absl import flags
 
-from dopamine.discrete_domains import run_experiment
-
 import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
+from dopamine.discrete_domains import llamn_run_experiment
 
 
 flags.DEFINE_string('base_dir', None,
                     'Base directory to host all required sub-directories.')
 flags.DEFINE_multi_string(
-    'gin_expert', [], 'List of paths to gin configuration files (e.g.'
-    '"dopamine/agents/dqn/dqn.gin").')
-flags.DEFINE_multi_string(
-    'gin_llamn', [], 'List of paths to gin configuration files (e.g.'
+    'gin_files', [], 'List of paths to gin configuration files (e.g.'
     '"dopamine/agents/dqn/dqn.gin").')
 flags.DEFINE_multi_string(
     'gin_bindings', [],
@@ -53,9 +53,9 @@ def main(unused_argv):
   Args:
     unused_argv: Arguments (unused).
   """
-  tf.logging.set_verbosity(tf.logging.ERROR)
-  run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
-  runner = run_experiment.create_runner(FLAGS.base_dir, 'llamn_continuous_train')
+  tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+  llamn_run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
+  runner = llamn_run_experiment.create_runner(FLAGS.base_dir)
   runner.run_experiment()
 
 

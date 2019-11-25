@@ -30,10 +30,14 @@ atari_lib.create_atari_environment.game_name = 'Pong'
 # Sticky actions with probability 0.25, as suggested by (Machado et al., 2017).
 atari_lib.create_atari_environment.sticky_actions = True
 create_agent.agent_name = 'expert'
-Runner.num_iterations = 200
-Runner.training_steps = 250000  # agent steps
-Runner.evaluation_steps = 125000  # agent steps
-Runner.max_steps_per_episode = 27000  # agent steps
+# Runner.num_iterations = 200
+# Runner.training_steps = 250000  # agent steps
+# Runner.evaluation_steps = 125000  # agent steps
+# Runner.max_steps_per_episode = 27000  # agent steps
+ExpertRunner.num_iterations = 1
+ExpertRunner.training_steps = 100  # agent steps
+ExpertRunner.evaluation_steps = 5  # agent steps
+ExpertRunner.max_steps_per_episode = 100  # agent steps
 
 WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
 WrappedPrioritizedReplayBuffer.batch_size = 32

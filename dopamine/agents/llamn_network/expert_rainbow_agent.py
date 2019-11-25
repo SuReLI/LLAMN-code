@@ -37,6 +37,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 
 from dopamine.agents.dqn import dqn_agent
 from dopamine.agents.rainbow import rainbow_agent
@@ -53,8 +54,9 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
   def __init__(self,
                sess,
                num_actions,
+               llamn_path,
+               name,
                feature_size=512,
-               llamn_network=None,
                observation_shape=dqn_agent.NATURE_DQN_OBSERVATION_SHAPE,
                observation_dtype=dqn_agent.NATURE_DQN_DTYPE,
                stack_size=dqn_agent.NATURE_DQN_STACK_SIZE,
@@ -78,11 +80,14 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                summary_writer=None,
                summary_writing_frequency=500):
 
-    self.feature_size = feature_size
-    self.llamn_network = llamn_network
+    self._num_actions = num_actions
+    self._feature_size = feature_size
+    self._llamn_path = llamn_path
+    self._name = name
 
-    rainbow_agent.RainbowAgent.__init__(
-        self,
+    self._create_llamn()
+
+    super().__init__(
         sess=sess,
         num_actions=num_actions,
         observation_shape=observation_shape,
@@ -107,6 +112,19 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
         summary_writer=summary_writer,
         summary_writing_frequency=summary_writing_frequency)
 
+  def _create_llamn(self):
+    if self._llamn_path:
+      llamn_name = os.path.basename(self._llamn_path)
+      self.llamn_network = llamn_atari_lib.AMNNetwork(self._num_actions,
+                                                      self._feature_size,
+                                                      name=llamn_name)
+    else:
+      self.llamn_network = None
+
+  def _load_llamn(self):
+    pass
+    # self.llamn_saver = tf.train.Saver()
+
   def _create_network(self, name):
     """Builds a convolutional network that outputs Q-value distributions.
 
@@ -116,9 +134,10 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     Returns:
       network: tf.keras.Model, the network instantiated by the Keras model.
     """
-    network = self.network(self.num_actions, self._num_atoms, self._support,
-                           self.feature_size, llamn_network=self.llamn_network,
-                           name=name)
+    scope_name = self._name + '/' + name
+    network = self.network(self._num_actions, self._num_atoms, self._support,
+                           self._feature_size, llamn_network=self.llamn_network,
+                           name=scope_name)
     return network
 
   def fill_sleeping_memory(self, sleeping_memory, nb_transitions):
@@ -133,3 +152,17 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
       # ################################################################ #
       sleeping_memory.add(self.state_ph, self._net_outputs.features)
       nb_tr += self.batch_size
+
+  def bundle_and_checkpoint(self, checkpoint_dir, iteration_number):
+    if not tf.gfile.Exists(checkpoint_dir):
+      return None
+    # Call the Tensorflow saver to checkpoint the graph.
+    self._saver.save(
+        self._sess,
+        os.path.join(checkpoint_dir, 'tf_ckpt'),
+        global_step=iteration_number)
+
+    bundle_dictionary = {}
+    bundle_dictionary['state'] = self.state
+    bundle_dictionary['training_steps'] = self.training_steps
+    return bundle_dictionary

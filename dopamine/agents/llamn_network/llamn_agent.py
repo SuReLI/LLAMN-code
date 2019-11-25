@@ -25,16 +25,19 @@ class AMNAgent(object):
   def __init__(self,
                sess,
                num_actions,
-               feature_size,
-               expert_list,
-               previous_network,
-               replay_memory,
-               feature_weight,
-               ewc_weight,
+               expert_paths,
+               name,
+               previous_network=None,
+               sleeping_memory=None,
+               feature_weight=0.2,
+               ewc_weight=0.1,
+               feature_size=512,
                observation_shape=atari_lib.NATURE_DQN_OBSERVATION_SHAPE,
                observation_dtype=atari_lib.NATURE_DQN_DTYPE,
                stack_size=atari_lib.NATURE_DQN_STACK_SIZE,
                network=llamn_atari_lib.AMNNetwork,
+               num_atoms=51,
+               vmax=10,
                tf_device='/cpu:*',
                eval_mode=False,
                max_tf_checkpoints_to_keep=4,
@@ -55,23 +58,28 @@ class AMNAgent(object):
     tf.logging.info('\t max_tf_checkpoints_to_keep: %d',
                     max_tf_checkpoints_to_keep)
 
+    vmax = float(vmax)
     self.num_actions = num_actions
     self.feature_size = feature_size
-    self.experts = expert_list
+    self.expert_paths = expert_paths
+    self.name = name
     self.previous_network = previous_network
-    self._replay = replay_memory
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
     self.network = network
+    self.num_atoms = num_atoms
+    self.support = tf.linspace(-vmax, vmax, num_atoms)
     self.eval_mode = eval_mode
     self.training_steps = 0
     self.optimizer = optimizer
     self.summary_writer = summary_writer
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
+
+    self._create_experts()
 
     with tf.device(tf_device):
       # Create a placeholder for the state input to the AMN network.
@@ -90,16 +98,32 @@ class AMNAgent(object):
       self._merged_summaries = tf.summary.merge_all()
     self._sess = sess
 
-    var_map = llamn_atari_lib.maybe_transform_variable_names(tf.all_variables())
+    var_map = atari_lib.maybe_transform_variable_names(tf.all_variables())
     self._saver = tf.train.Saver(var_list=var_map,
                                  max_to_keep=max_tf_checkpoints_to_keep)
 
+  def _create_experts(self):
+    self.experts = []
+    for path in self.expert_paths:
+      expert_name = os.path.basename(path) + '/online'
+      expert = llamn_atari_lib.ExpertNetwork(
+          self.num_actions, self.num_atoms, self.support,
+          self.feature_size, llamn_network=None, name=expert_name)
+      self.experts.append(expert)
+
+  def _load_experts(self):
+    for path, expert in zip(self.expert_paths, self.experts):
+      saver = tf.train.Saver(var_list=expert.variables)
+      ckpt_path = tf.train.get_checkpoint_state(path + "/checkpoints")
+      saver.restore(self._sess, ckpt_path.model_checkpoint_path)
+
   def _create_network(self, name):
-    network = self.network(self.num_actions, self.feature_size, name=name)
+    scope_name = self.name + '/' + name
+    network = self.network(self.num_actions, self.feature_size, name=scope_name)
     return network
 
   def _build_networks(self):
-    self.convnet = self._create_network(name='Online')
+    self.convnet = self._create_network(name='online')
     self._net_outputs = self.convnet(self.state_ph)
 
     self._expert_outputs = [expert(self.state_ph) for expert in self.experts]
@@ -123,7 +147,10 @@ class AMNAgent(object):
     return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_ewc_loss(self):
-    return 0
+    if self.previous_network is None:
+      return 0
+
+    pass
 
   def _build_train_op(self):
     loss = 0
