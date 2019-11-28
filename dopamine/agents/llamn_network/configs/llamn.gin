@@ -4,21 +4,51 @@ import dopamine.agents.llamn_network.llamn_agent
 import dopamine.discrete_domains.llamn_atari_lib
 import dopamine.discrete_domains.atari_lib
 import dopamine.discrete_domains.run_experiment
+import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
-AMNAgent.feature_size = 512
-AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
-AMNAgent.optimizer = @tf.train.AdamOptimizer()
-
-# Note these parameters are different from C51's.
-tf.train.AdamOptimizer.learning_rate = 0.0000625
-tf.train.AdamOptimizer.epsilon = 0.00015
-
+# Atari
 llamn_atari_lib.AtariEnvCreator.games_names = ['Pong', 'Breakout']
 llamn_atari_lib.AtariEnvCreator.sticky_actions = True
 
+# Runner
 Runner.num_iterations = 1
 Runner.training_steps = 100  # agent steps
 Runner.evaluation_steps = 5  # agent steps
 Runner.max_steps_per_episode = 100  # agent steps
 
+LLAMNRunner.num_iterations = 1
+LLAMNRunner.training_steps = 100  # agent steps
+
+
+# Common Expert / LLAMN
+update_horizon = 3
+
+# Expert
+ExpertAgent.feature_size = 512
+ExpertAgent.num_atoms = 51
+ExpertAgent.vmax = 10.
+ExpertAgent.gamma = 0.99
+ExpertAgent.update_horizon = %update_horizon
+ExpertAgent.min_replay_history = 20000  # agent steps
+ExpertAgent.update_period = 4
+ExpertAgent.target_update_period = 8000  # agent steps
+ExpertAgent.epsilon_train = 0.01
+ExpertAgent.epsilon_eval = 0.001
+ExpertAgent.epsilon_decay_period = 250000  # agent steps
+ExpertAgent.replay_scheme = 'prioritized'
+ExpertAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+ExpertAgent.optimizer = @tf.train.AdamOptimizer()
+
+tf.train.AdamOptimizer.learning_rate = 0.0000625
+tf.train.AdamOptimizer.epsilon = 0.00015
+
+
+# AMN
+AMNAgent.feature_size = 512
+AMNAgent.update_horizon = %update_horizon
+AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+AMNAgent.optimizer = @tf.train.AdamOptimizer()
+
+# Replay Buffer
+WrappedPrioritizedReplayBuffer.replay_capacity = 1000

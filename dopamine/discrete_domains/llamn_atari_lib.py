@@ -19,6 +19,11 @@ AMNNetworkType = collections.namedtuple(
     'amn_network', ['output', 'q_softmax', 'features'])
 
 
+def translate_var_name(scope_name):
+  min_range = len(scope_name)
+  return lambda var_name: var_name[min_range:var_name.rindex(':')]
+
+
 @gin.configurable
 class AtariEnvCreator:
 
@@ -71,9 +76,6 @@ class ExpertNetwork(tf.keras.Model):
         num_actions * num_atoms, kernel_initializer=self.kernel_initializer,
         name='dense_2')
 
-    self.stop_grad = tf.keras.layers.Lambda(
-        lambda x: tf.stop_gradient(x), name='stop_gradient')
-
     self.llamn_network = llamn_network
 
   def call(self, state):
@@ -84,21 +86,26 @@ class ExpertNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    features = self.dense1(x)
+    x = self.dense1(x)
+    features = tf.identity(x)
 
     if self.llamn_network:
-      y = self.llamn_network(state)
-      y = self.stop_grad(y)
-      x = tf.concat([features, y], axis=1)
+      llamn_features = self.llamn_network(state).features
+      llamn_features = tf.stop_gradient(llamn_features)
+      x = tf.concat([x, llamn_features], axis=1)
       # ################################################################ #
       #                               TODO                               #
       # ---------------------------------------------------------------- #
       # + Check if concatenation is OK                                   #
       # + Check if stop_grad is working and llamn_network is not updated #
       # ################################################################ #
-      print("y :\n", y, '\n\n', '-'*200, '\n')    # debug
-      print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
+      # print("llamn_features :\n", llamn_features, '\n\n', '-'*200, '\n')        # debug
+      # print("x :\n", x, '\n\n', '-'*200, '\n')        # debug
 
+    print("self.llamn_network :\n", self.llamn_network, '\n\n', '-'*200, '\n')    # debug
+    print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
+    print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
+    print()
     x = self.dense2(x)
     logits = tf.reshape(x, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)

@@ -55,7 +55,7 @@ def main(unused_argv):
   """
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
   llamn_run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
-  runner = llamn_run_experiment.create_runner(FLAGS.base_dir)
+  runner = llamn_run_experiment.MasterRunner(FLAGS.base_dir)
   runner.run_experiment()
 
 

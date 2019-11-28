@@ -6,6 +6,7 @@ from __future__ import print_function
 import os
 
 
+from dopamine.replay_memory import prioritized_replay_buffer
 from dopamine.discrete_domains import atari_lib, llamn_atari_lib
 import numpy as np
 import tensorflow as tf
@@ -19,15 +20,15 @@ NATURE_DQN_DTYPE = atari_lib.NATURE_DQN_DTYPE
 
 
 @gin.configurable
-class AMNAgent(object):
+class AMNAgent:
   """An implementation of the LLAMN agent."""
 
   def __init__(self,
                sess,
                num_actions,
                expert_paths,
+               llamn_path,
                name,
-               previous_network=None,
                sleeping_memory=None,
                feature_weight=0.2,
                ewc_weight=0.1,
@@ -36,6 +37,8 @@ class AMNAgent(object):
                observation_dtype=atari_lib.NATURE_DQN_DTYPE,
                stack_size=atari_lib.NATURE_DQN_STACK_SIZE,
                network=llamn_atari_lib.AMNNetwork,
+               gamma=0.99,
+               update_horizon=1,
                num_atoms=51,
                vmax=10,
                tf_device='/cpu:*',
@@ -62,14 +65,16 @@ class AMNAgent(object):
     self.num_actions = num_actions
     self.feature_size = feature_size
     self.expert_paths = expert_paths
+    self.llamn_path = llamn_path
     self.name = name
-    self.previous_network = previous_network
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
     self.network = network
+    self.gamma = gamma
+    self.update_horizon = update_horizon
     self.num_atoms = num_atoms
     self.support = tf.linspace(-vmax, vmax, num_atoms)
     self.eval_mode = eval_mode
@@ -79,7 +84,7 @@ class AMNAgent(object):
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
 
-    self._create_experts()
+    self._create_experts_and_llamn()
 
     with tf.device(tf_device):
       # Create a placeholder for the state input to the AMN network.
@@ -102,8 +107,9 @@ class AMNAgent(object):
     self._saver = tf.train.Saver(var_list=var_map,
                                  max_to_keep=max_tf_checkpoints_to_keep)
 
-  def _create_experts(self):
+  def _create_experts_and_llamn(self):
     self.experts = []
+    self.replays = []
     for path in self.expert_paths:
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
@@ -111,43 +117,81 @@ class AMNAgent(object):
           self.feature_size, llamn_network=None, name=expert_name)
       self.experts.append(expert)
 
-  def _load_experts(self):
-    for path, expert in zip(self.expert_paths, self.experts):
+      replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
+          observation_shape=self.observation_shape,
+          stack_size=self.stack_size,
+          use_staging=False,
+          update_horizon=self.update_horizon,
+          gamma=self.gamma,
+          observation_dtype=self.observation_dtype.as_numpy_dtype)
+      self.replays.append(replay)
+
+    if self.llamn_path:
+      llamn_name = os.path.basename(self.llamn_path)
+      self.previous_llamn = llamn_atari_lib.AMNNetwork(
+          self.num_actions, self.feature_size, name=llamn_name)
+
+  def _load_networks(self):
+    for i in range(len(self.experts)):
+      path, expert = self.expert_paths[i], self.experts[i]
       saver = tf.train.Saver(var_list=expert.variables)
       ckpt_path = tf.train.get_checkpoint_state(path + "/checkpoints")
       saver.restore(self._sess, ckpt_path.model_checkpoint_path)
 
-  def _create_network(self, name):
-    scope_name = self.name + '/' + name
-    network = self.network(self.num_actions, self.feature_size, name=scope_name)
+      replay = self.replays[i]
+      nb_iteration = int(ckpt_path.model_checkpoint_path.rsplit('-', 1)[1])
+      replay.load(path + '/checkpoints', nb_iteration)
+
+    if self.llamn_path:
+      saver = tf.train.Saver(var_list=self.previous_llamn.variables)
+      ckpt_path = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
+      saver.restore(self._sess, ckpt_path.model_checkpoint_path)
+
+  def _create_network(self):
+    network = self.network(self.num_actions, self.feature_size, name=self.name)
     return network
 
   def _build_networks(self):
-    self.convnet = self._create_network(name='online')
-    self._net_outputs = self.convnet(self.state_ph)
+    self.convnet = self._create_network()
 
-    self._expert_outputs = [expert(self.state_ph) for expert in self.experts]
+    self._net_q_softmax = []
+    self._net_features = []
+    self._expert_q_softmax = []
+    self._expert_features = []
+    self._previous_llamn_output = []
 
-    self.output = self._net_outputs.output
-    self.q_softmax = self._net_outputs.q_softmax
-    self.features = self._net_outputs.features
+    for i in range(len(self.experts)):
+      replay_state = self.replays[i].states
 
-    # Select action
-    self.q_argmax = tf.argmax(self.q_softmax, axis=1)[0]
+      net_output = self.convnet(replay_state)
+      self._net_q_softmax.append(net_output.q_softmax)
+      self._net_features.append(net_output.features)
+
+      expert_output = self.experts[i](replay_state)
+      expert_q_softmax = tf.nn.softmax(expert_output.q_values, axis=1)
+      self._expert_q_softmax.append(expert_q_softmax)
+      self._expert_features.append(expert_output.features)
+
+      if self.llamn_path:
+        llamn_output = self.previous_llamn(replay_state)
+        self._previous_llamn_output.append(llamn_output.features)
 
   def _build_xent_loss(self, i_task):
-    expert_output = self._expert_outputs[i_task].q_values
-    expert_softmax = tf.nn.softmax(expert_output, axis=1)
-    loss = expert_softmax * tf.log(self.q_softmax)
+    expert_softmax = self._expert_q_softmax[i_task]
+    net_softmax = self._net_q_softmax[i_task]
+
+    loss = expert_softmax * tf.log(net_softmax)
     return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_l2_loss(self, i_task):
-    expert_features = self._expert_outputs[i_task].features
-    loss = tf.nn.l2_loss(expert_features - self.features)
+    expert_features = self._expert_features[i_task]
+    net_features = self._net_features[i_task]
+
+    loss = tf.nn.l2_loss(expert_features - net_features)
     return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_ewc_loss(self):
-    if self.previous_network is None:
+    if self.llamn_path is None:
       return 0
 
     pass
@@ -156,36 +200,26 @@ class AMNAgent(object):
     loss = 0
 
     for i_task in range(len(self.experts)):
-
       xent_loss = self._build_xent_loss(i_task)
       l2_loss = self._build_l2_loss(i_task)
-
       loss += xent_loss + self.feature_weight * l2_loss
 
-    # ewc_loss = self._build_ewc_loss()
-
-    # loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
+    ewc_loss = self._build_ewc_loss()
+    if ewc_loss:
+      loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
     if self.summary_writer is not None:
       with tf.variable_scope('Losses'):
         tf.summary.scalar('Loss', tf.reduce_mean(loss))
-    print("loss :\n", loss, '\n\n', '-'*200, '\n')    # debug
-    print("tf.reduce_mean(loss) :\n", tf.reduce_mean(loss), '\n\n', '-'*200, '\n')    # debug
+
+    # print("loss :\n", loss, '\n\n', '-'*200, '\n')    # debug
+    # print("tf.reduce_mean(loss) :\n", tf.reduce_mean(loss), '\n\n', '-'*200, '\n')    # debug
+
     return self.optimizer.minimize(tf.reduce_mean(loss))
 
-  def begin_episode(self, state):
-    return self.step(state)
-
-  def step(self, state):
-
+  def step(self):
     if not self.eval_mode:
       self._train_step()
-
-    self.action = self._select_action(state)
-    return self.action
-
-  def end_episode(self, reward):
-    pass
 
   def _select_action(self):
     # Choose the action with highest Q-value at the current state.
@@ -223,12 +257,7 @@ class AMNAgent(object):
         self._sess,
         os.path.join(checkpoint_dir, 'tf_ckpt'),
         global_step=iteration_number)
-    # Checkpoint the out-of-graph replay buffer.
-    self._replay.save(checkpoint_dir, iteration_number)
-    bundle_dictionary = {}
-    bundle_dictionary['state'] = self.state
-    bundle_dictionary['training_steps'] = self.training_steps
-    return bundle_dictionary
+    return
 
   def unbundle(self, checkpoint_dir, iteration_number, bundle_dictionary):
     """Restores the agent from a checkpoint.
