@@ -8,17 +8,17 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-llamn_atari_lib.AtariEnvCreator.games_names = ['Pong', 'Breakout']
-llamn_atari_lib.AtariEnvCreator.sticky_actions = True
+MasterRunner.games_names = ['Pong', 'Breakout']
+# MasterRunner.sticky_actions = True
 
 # Runner
 Runner.num_iterations = 1
-Runner.training_steps = 100  # agent steps
-Runner.evaluation_steps = 5  # agent steps
-Runner.max_steps_per_episode = 100  # agent steps
+Runner.training_steps = 100
+Runner.max_steps_per_episode = 100
 
 LLAMNRunner.num_iterations = 1
-LLAMNRunner.training_steps = 100  # agent steps
+LLAMNRunner.training_steps = 100
+LLAMNRunner.max_steps_per_episode = 27000
 
 
 # Common Expert / LLAMN

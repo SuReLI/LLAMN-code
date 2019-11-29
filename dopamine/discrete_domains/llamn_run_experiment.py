@@ -18,13 +18,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
 import os
-import time
 import glob
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
-from dopamine.discrete_domains import llamn_atari_lib
 from dopamine.discrete_domains import iteration_statistics
 
 from dopamine.discrete_domains.run_experiment import TrainRunner
@@ -32,6 +29,8 @@ from dopamine.discrete_domains.run_experiment import TrainRunner
 import tensorflow as tf
 
 import gin.tf
+import gym
+from dopamine.discrete_domains.atari_lib import AtariPreprocessing
 
 
 def get_next_dir_index(base_dir, name):
@@ -64,11 +63,34 @@ def create_expert(sess, environment, llamn_path, name,
       name=name, summary_writer=summary_writer)
 
 
+class Game:
+
+  def __init__(self, game_name, sticky_actions=True):
+    self.name = game_name
+    self.version = 'v0' if sticky_actions else 'v4'
+
+    self.full_name = f'{self.name}NoFrameskip-{self.version}'
+
+    env = gym.make(self.full_name)
+    self.num_actions = env.action_space.n
+
+  def env_factory(self):
+    return lambda: AtariPreprocessing(gym.make(self.full_name).env)
+
+  def __repr__(self):
+    return self.name
+
+
+@gin.configurable
 class MasterRunner:
 
-  def __init__(self, base_dir):
+  def __init__(self, base_dir, games_names=None, sticky_actions=True):
+    assert games_names is not None
 
     self.base_dir = base_dir
+
+    self.games = [Game(game_name, sticky_actions) for game_name in games_names]
+    self.max_num_actions = max([game.num_actions for game in self.games])
 
   def run_experiment(self):
 
@@ -76,22 +98,29 @@ class MasterRunner:
     print('Beginning Master Runner')
     llamn_path = None
 
-    for i in range(10):
+    for i in range(len(self.games)):
+      game = self.games[i]
 
       print(f"Running iteration {i}")
-      print(f"\tCreating expert {i}")
-      expert = ExpertRunner(self.base_dir, create_expert, llamn_path)
-      last_experts_path = [expert._base_dir]
+      print(f"\tCreating expert {i} on game {game}")
+      expert = ExpertRunner(self.base_dir,
+                            create_agent_fn=create_expert,
+                            create_environment_fn=game.env_factory(),
+                            llamn_path=llamn_path)
+
+      last_experts_paths = [expert._base_dir]
+      last_experts_envs = [expert._environment]
 
       print(f"\tRunning expert {i}")
       tf.logging.info('Running expert')
       expert.run_experiment()
       print()
 
-      num_actions = expert._environment.action_space.n
-
       print(f"\tCreating llamn {i}")
-      llamn = LLAMNRunner(self.base_dir, num_actions, last_experts_path)
+      llamn = LLAMNRunner(self.base_dir,
+                          num_actions=self.max_num_actions,
+                          expert_envs=last_experts_envs,
+                          expert_paths=last_experts_paths)
       llamn_path = llamn._base_dir
 
       print(f"\tRunning llamn {i}")
@@ -105,13 +134,12 @@ class ExpertRunner(TrainRunner):
   def __init__(self,
                base_dir,
                create_agent_fn,
+               create_environment_fn,
                llamn_path=None):
 
     self._index = get_next_dir_index(base_dir, 'expert')
     name = f'expert_{self._index}'
     base_dir = os.path.join(base_dir, name)
-
-    create_environment_fn = llamn_atari_lib.AtariEnvCreator()
 
     def create_expert_fn(*args, **kwargs):
       return create_agent_fn(*args, **kwargs, llamn_path=llamn_path, name=name)
@@ -127,17 +155,20 @@ class LLAMNRunner(TrainRunner):
   def __init__(self,
                base_dir,
                num_actions,
+               expert_envs,
                expert_paths,
                checkpoint_file_prefix='ckpt',
                logging_file_prefix='log',
                log_every_n=1,
                num_iterations=200,
-               training_steps=250000):
+               training_steps=250000,
+               max_steps_per_episode=27000):
 
     self._logging_file_prefix = logging_file_prefix
     self._log_every_n = log_every_n
     self._num_iterations = num_iterations
     self._training_steps = training_steps
+    self._max_steps_per_episode = max_steps_per_episode
     self._index = get_next_dir_index(base_dir, 'llamn')
     self._name = f'llamn_{self._index}'
     self._base_dir = os.path.join(base_dir, self._name)
@@ -149,6 +180,8 @@ class LLAMNRunner(TrainRunner):
     else:
       llamn_path = None
 
+    self.ind_env = 0
+    self._environments = expert_envs
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     tf.reset_default_graph()
@@ -166,56 +199,23 @@ class LLAMNRunner(TrainRunner):
 
     self._agent._load_networks()
 
-  def _run_one_phase(self, min_steps):
-    step_count = 0
-
-    while step_count < min_steps:
-      self._agent.step()
-
-      if step_count % 1000 == 0:
-        sys.stdout.write('\tSteps executed: {}\r'.format(step_count))
-        sys.stdout.flush()
-
-      step_count += 1
-
-    return step_count
-
-  def _run_train_phase(self, statistics):
-    self._agent.eval_mode = False
-
-    start_time = time.time()
-    number_steps = self._run_one_phase(self._training_steps)
-    time_delta = time.time() - start_time
-
-    number_steps_per_sec = number_steps / time_delta
-    tf.logging.info('Average trainning steps per second: %.2f',
-                    number_steps_per_sec)
-
-    return number_steps_per_sec
+  @property
+  def _environment(self):
+    return self._environments[self.ind_env]
 
   def _run_one_iteration(self, iteration):
     statistics = iteration_statistics.IterationStatistics()
     tf.logging.info('Starting iteration %d', iteration)
-    nb_steps_per_sec = self._run_train_phase(statistics)
 
-    self._save_tensorboard_summaries(iteration, nb_steps_per_sec)
+    for i in range(len(self._environments)):
+
+      print(f'\tTraining LLAMN on {self._environment.environment.game}')
+      self.ind_env = i
+      self._agent.ind_expert = self.ind_env
+
+      num_episodes_train, average_reward_train = self._run_train_phase(
+          statistics)
+
+      self._save_tensorboard_summaries(iteration, num_episodes_train,
+                                       average_reward_train)
     return statistics.data_lists
-
-  def run_experiment(self):
-    """Runs a full experiment, spread over multiple iterations."""
-    tf.logging.info('Beginning training...')
-    if self._num_iterations <= self._start_iteration:
-      tf.logging.warning('num_iterations (%d) < start_iteration(%d)',
-                         self._num_iterations, self._start_iteration)
-      return
-
-    for iteration in range(self._start_iteration, self._num_iterations):
-      statistics = self._run_one_iteration(iteration)
-      self._log_experiment(iteration, statistics)
-      self._checkpoint_experiment(iteration)
-
-  def _save_tensorboard_summaries(self, iteration, nb_steps_per_sec):
-    summary = tf.Summary(value=[
-        tf.Summary.Value(tag='Train/NumStepsPerSec', simple_value=nb_steps_per_sec)
-    ])
-    self._summary_writer.add_summary(summary, iteration)

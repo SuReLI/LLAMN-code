@@ -4,7 +4,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-
+import math
 
 from dopamine.replay_memory import prioritized_replay_buffer
 from dopamine.discrete_domains import atari_lib, llamn_atari_lib
@@ -39,6 +39,8 @@ class AMNAgent:
                network=llamn_atari_lib.AMNNetwork,
                gamma=0.99,
                update_horizon=1,
+               min_replay_history=5000,
+               update_period=4,
                num_atoms=51,
                vmax=10,
                tf_device='/cpu:*',
@@ -53,6 +55,7 @@ class AMNAgent:
                summary_writer=None,
                summary_writing_frequency=500,
                allow_partial_reload=False):
+
     assert isinstance(observation_shape, tuple)
     tf.logging.info('Creating %s agent with the following parameters:',
                     self.__class__.__name__)
@@ -65,6 +68,8 @@ class AMNAgent:
     self.num_actions = num_actions
     self.feature_size = feature_size
     self.expert_paths = expert_paths
+    self.ind_expert = 0
+    self.nb_experts = len(expert_paths)
     self.llamn_path = llamn_path
     self.name = name
     self.feature_weight = feature_weight
@@ -75,28 +80,33 @@ class AMNAgent:
     self.network = network
     self.gamma = gamma
     self.update_horizon = update_horizon
+    self.cumulative_gamma = math.pow(gamma, update_horizon)
+    self.min_replay_history = min_replay_history
+    self.update_period = update_period
     self.num_atoms = num_atoms
     self.support = tf.linspace(-vmax, vmax, num_atoms)
     self.eval_mode = eval_mode
-    self.training_steps = 0
+    self.training_steps_list = [0] * self.nb_experts
     self.optimizer = optimizer
     self.summary_writer = summary_writer
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
 
-    self._create_experts_and_llamn()
-
     with tf.device(tf_device):
+      self._build_experts()
+      self._build_prev_llamn()
+
       # Create a placeholder for the state input to the AMN network.
       # The last axis indicates the number of consecutive frames stacked.
-      state_shape = (1,) + self.observation_shape + (stack_size, )
-      self.state = np.zeros(state_shape)
+      state_shape = (1, *self.observation_shape, stack_size)
+      self.states = [np.zeros(state_shape) for i in range(self.nb_experts)]
       self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
                                      name='state_ph')
+      self._build_replay_buffers()
 
       self._build_networks()
 
-      self._train_op = self._build_train_op()
+      self._train_ops = self._build_train_ops()
 
     if self.summary_writer is not None:
       # All tf.summaries should have been defined prior to running this.
@@ -107,40 +117,70 @@ class AMNAgent:
     self._saver = tf.train.Saver(var_list=var_map,
                                  max_to_keep=max_tf_checkpoints_to_keep)
 
-  def _create_experts_and_llamn(self):
+    self._observation = None
+    self._last_observation = None
+
+  @property
+  def state(self):
+    return self.states[self.ind_expert]
+
+  @state.setter
+  def state(self, value):
+    self.states[self.ind_expert] = value
+
+  @property
+  def replay(self):
+    return self.replays[self.ind_expert]
+
+  @property
+  def q_argmax(self):
+    return self._net_q_argmax[self.ind_expert]
+
+  @property
+  def _train_op(self):
+    return self._train_ops[self.ind_expert]
+
+  @property
+  def training_steps(self):
+    return self.training_steps_list[self.ind_expert]
+
+  @training_steps.setter
+  def training_steps(self, value):
+    self.training_steps_list[self.ind_expert] = value
+
+  def _build_experts(self):
     self.experts = []
-    self.replays = []
     for path in self.expert_paths:
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
           self.num_actions, self.num_atoms, self.support,
-          self.feature_size, llamn_network=None, name=expert_name)
+          self.feature_size, llamn_name=None, name=expert_name)
       self.experts.append(expert)
 
-      replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
-          observation_shape=self.observation_shape,
-          stack_size=self.stack_size,
-          use_staging=False,
-          update_horizon=self.update_horizon,
-          gamma=self.gamma,
-          observation_dtype=self.observation_dtype.as_numpy_dtype)
-      self.replays.append(replay)
-
+  def _build_prev_llamn(self):
     if self.llamn_path:
       llamn_name = os.path.basename(self.llamn_path)
       self.previous_llamn = llamn_atari_lib.AMNNetwork(
           self.num_actions, self.feature_size, name=llamn_name)
 
+  def _build_replay_buffers(self):
+    self.replays = []
+    for i in range(self.nb_experts):
+      replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
+          observation_shape=self.observation_shape,
+          stack_size=self.stack_size,
+          use_staging=True,
+          update_horizon=self.update_horizon,
+          gamma=self.gamma,
+          observation_dtype=self.observation_dtype.as_numpy_dtype)
+      self.replays.append(replay)
+
   def _load_networks(self):
-    for i in range(len(self.experts)):
+    for i in range(self.nb_experts):
       path, expert = self.expert_paths[i], self.experts[i]
       saver = tf.train.Saver(var_list=expert.variables)
       ckpt_path = tf.train.get_checkpoint_state(path + "/checkpoints")
       saver.restore(self._sess, ckpt_path.model_checkpoint_path)
-
-      replay = self.replays[i]
-      nb_iteration = int(ckpt_path.model_checkpoint_path.rsplit('-', 1)[1])
-      replay.load(path + '/checkpoints', nb_iteration)
 
     if self.llamn_path:
       saver = tf.train.Saver(var_list=self.previous_llamn.variables)
@@ -154,17 +194,28 @@ class AMNAgent:
   def _build_networks(self):
     self.convnet = self._create_network()
 
+    net_logits = self.convnet(self.state_ph).logits
+
+    self._net_q_argmax = []
     self._net_q_softmax = []
     self._net_features = []
     self._expert_q_softmax = []
     self._expert_features = []
     self._previous_llamn_output = []
 
-    for i in range(len(self.experts)):
+    for i in range(self.nb_experts):
       replay_state = self.replays[i].states
+      expert_mask = [n_action < self.experts[i].num_actions
+                     for n_action in range(self.num_actions)]
+
+      partial_output = tf.boolean_mask(net_logits, expert_mask, axis=1)
+      q_argmax = tf.argmax(partial_output, axis=1)[0]
+      self._net_q_argmax.append(q_argmax)
 
       net_output = self.convnet(replay_state)
-      self._net_q_softmax.append(net_output.q_softmax)
+      partial_output = tf.boolean_mask(net_output.logits, expert_mask, axis=1)
+      q_softmax = tf.nn.softmax(partial_output, axis=1)
+      self._net_q_softmax.append(q_softmax)
       self._net_features.append(net_output.features)
 
       expert_output = self.experts[i](replay_state)
@@ -196,43 +247,90 @@ class AMNAgent:
 
     pass
 
-  def _build_train_op(self):
-    loss = 0
-
-    for i_task in range(len(self.experts)):
-      xent_loss = self._build_xent_loss(i_task)
-      l2_loss = self._build_l2_loss(i_task)
-      loss += xent_loss + self.feature_weight * l2_loss
+  def _build_train_ops(self):
+    train_ops = []
 
     ewc_loss = self._build_ewc_loss()
-    if ewc_loss:
-      loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
-    if self.summary_writer is not None:
-      with tf.variable_scope('Losses'):
-        tf.summary.scalar('Loss', tf.reduce_mean(loss))
+    for i_task in range(self.nb_experts):
 
-    # print("loss :\n", loss, '\n\n', '-'*200, '\n')    # debug
-    # print("tf.reduce_mean(loss) :\n", tf.reduce_mean(loss), '\n\n', '-'*200, '\n')    # debug
+      xent_loss = self._build_xent_loss(i_task)
+      l2_loss = self._build_l2_loss(i_task)
+      loss = xent_loss + self.feature_weight * l2_loss
 
-    return self.optimizer.minimize(tf.reduce_mean(loss))
+      if ewc_loss:
+        loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
-  def step(self):
+      if self.summary_writer is not None:
+        with tf.variable_scope('Losses'):
+          tf.summary.scalar('Loss', tf.reduce_mean(loss))
+
+      train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
+
+    return train_ops
+
+  def begin_episode(self, observation):
+    self._reset_state()
+    self._record_observation(observation)
+
     if not self.eval_mode:
       self._train_step()
+
+    self.action = self._select_action()
+    return self.action
+
+  def step(self, reward, observation):
+    self._last_observation = self._observation
+    self._record_observation(observation)
+
+    if not self.eval_mode:
+      self._store_transition(self._last_observation, self.action, reward, False)
+      self._train_step()
+
+    self.action = self._select_action()
+    return self.action
+
+  def end_episode(self, reward):
+    if not self.eval_mode:
+      self._store_transition(self._observation, self.action, reward, True)
 
   def _select_action(self):
     # Choose the action with highest Q-value at the current state.
     return self._sess.run(self.q_argmax, {self.state_ph: self.state})
 
   def _train_step(self):
-    self._sess.run(self._train_op)
-    if (self.summary_writer is not None and self.training_steps > 0
-       and self.training_steps % self.summary_writing_frequency == 0):
-      summary = self._sess.run(self._merged_summaries)
-      self.summary_writer.add_summary(summary, self.training_steps)
+
+    if self.replay.memory.add_count > self.min_replay_history:
+      if self.training_steps % self.update_period == 0:
+        self._sess.run(self._train_op)
+        if (self.summary_writer is not None
+            and self.training_steps > 0
+            and self.training_steps % self.summary_writing_frequency == 0):
+          summary = self._sess.run(self._merged_summaries)
+          self.summary_writer.add_summary(summary, self.training_steps)
 
     self.training_steps += 1
+
+  def _record_observation(self, observation):
+    self._observation = np.reshape(observation, self.observation_shape)
+
+    self.state = np.roll(self.state, -1, axis=-1)
+    self.state[0, ..., -1] = self._observation
+
+  def _store_transition(self,
+                        last_observation,
+                        action,
+                        reward,
+                        is_terminal,
+                        priority=None):
+    if priority is None:
+      priority = self.replay.memory.sum_tree.max_recorded_priority
+
+    if not self.eval_mode:
+      self.replay.add(last_observation, action, reward, is_terminal, priority)
+
+  def _reset_state(self):
+    self.state.fill(0)
 
   def bundle_and_checkpoint(self, checkpoint_dir, iteration_number):
     """Returns a self-contained bundle of the agent's state.

@@ -5,51 +5,37 @@ from __future__ import print_function
 
 import collections
 
-import gym
-import gin
 import numpy as np
 import tensorflow as tf
-
-from dopamine.discrete_domains.atari_lib import AtariPreprocessing
 
 
 ExpertNetworkType = collections.namedtuple(
     'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
 AMNNetworkType = collections.namedtuple(
-    'amn_network', ['output', 'q_softmax', 'features'])
+    'amn_network', ['output', 'logits', 'features'])
 
 
-def translate_var_name(scope_name):
-  min_range = len(scope_name)
-  return lambda var_name: var_name[min_range:var_name.rindex(':')]
+def translate_var_name(llamn_path):
+  llamn_name = llamn_path.rsplit('/', 1)[1]
 
+  def translate(var_name):
+    if 'llamn' in var_name:
+      var = var_name.split('/', 3)[3]
+      var = llamn_name + '/' + var
 
-@gin.configurable
-class AtariEnvCreator:
+    else:
+      expert, var = var_name.split('/', 1)
+      expert_nb = int(expert.split('_')[1]) - 1
+      var = f'expert_{expert_nb}/' + var
 
-  def __init__(self, games_names=None, sticky_actions=True):
-    assert games_names is not None
-    self.games_names = games_names
-    self.game_index = 0
-    self.game_version = 'v0' if sticky_actions else 'v4'
-
-  def is_finished(self):
-    return self.game_index == len(self.games_names)
-
-  def __call__(self):
-    game_name = self.games_names[self.game_index]
-    self.game_index += 1
-
-    full_game_name = '{}NoFrameskip-{}'.format(game_name, self.game_version)
-    env = gym.make(full_game_name).env
-    env = AtariPreprocessing(env)
-    return env
+    return var.rsplit(':', 1)[0]
+  return translate
 
 
 class ExpertNetwork(tf.keras.Model):
 
   def __init__(self, num_actions, num_atoms, support,
-               feature_size, llamn_network, name):
+               feature_size, llamn_name, name):
     super().__init__(name=name)
     activation_fn = tf.keras.activations.relu
     self.num_actions = num_actions
@@ -76,7 +62,10 @@ class ExpertNetwork(tf.keras.Model):
         num_actions * num_atoms, kernel_initializer=self.kernel_initializer,
         name='dense_2')
 
-    self.llamn_network = llamn_network
+    if llamn_name:
+      self.llamn_network = AMNNetwork(num_actions, feature_size, llamn_name)
+    else:
+      self.llamn_network = None
 
   def call(self, state):
     state = tf.cast(state, tf.float32)
@@ -90,7 +79,7 @@ class ExpertNetwork(tf.keras.Model):
     features = tf.identity(x)
 
     if self.llamn_network:
-      llamn_features = self.llamn_network(state).features
+      llamn_features = self.llamn_network(state).output
       llamn_features = tf.stop_gradient(llamn_features)
       x = tf.concat([x, llamn_features], axis=1)
       # ################################################################ #
@@ -102,10 +91,10 @@ class ExpertNetwork(tf.keras.Model):
       # print("llamn_features :\n", llamn_features, '\n\n', '-'*200, '\n')        # debug
       # print("x :\n", x, '\n\n', '-'*200, '\n')        # debug
 
-    print("self.llamn_network :\n", self.llamn_network, '\n\n', '-'*200, '\n')    # debug
-    print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
-    print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
-    print()
+    # print("self.llamn_network :\n", self.llamn_network, '\n\n', '-'*200, '\n')    # debug
+    # print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
+    # print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
+    # print()        # debug
     x = self.dense2(x)
     logits = tf.reshape(x, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
@@ -132,13 +121,14 @@ class AMNNetwork(tf.keras.Model):
         64, [3, 3], strides=1, padding='same', activation=activation_fn,
         kernel_initializer=self.kernel_initializer, name='conv_3')
     self.flatten = tf.keras.layers.Flatten()
+
     self.dense1 = tf.keras.layers.Dense(
         512, activation=activation_fn,
         kernel_initializer=self.kernel_initializer, name='dense_1')
     self.dense_output = tf.keras.layers.Dense(
-        num_actions, activation=tf.keras.activations.softmax,
-        kernel_initializer=self.kernel_initializer, name='dense_out')
-    self.dense_feature = tf.keras.layers.Dense(
+        num_actions, kernel_initializer=self.kernel_initializer,
+        name='dense_out')
+    self.dense_features = tf.keras.layers.Dense(
         feature_size, kernel_initializer=self.kernel_initializer,
         name='dense_feat')
 
@@ -150,7 +140,7 @@ class AMNNetwork(tf.keras.Model):
     x = self.conv3(x)
     x = self.flatten(x)
     output = self.dense1(x)
-    probabilities = self.dense_output(output)
-    feature = self.dense_feature(output)
+    logits = self.dense_output(output)
+    features = self.dense_features(output)
 
-    return AMNNetworkType(output, probabilities, feature)
+    return AMNNetworkType(output, logits, features)

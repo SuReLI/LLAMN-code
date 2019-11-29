@@ -85,8 +85,6 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     self.llamn_path = llamn_path
     self.name = name
 
-    self._create_llamn()
-
     super().__init__(
         sess=sess,
         num_actions=num_actions,
@@ -112,25 +110,17 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
         summary_writer=summary_writer,
         summary_writing_frequency=summary_writing_frequency)
 
-  def _create_llamn(self):
-    if self.llamn_path:
-      llamn_name = os.path.basename(self.llamn_path)
-      self.llamn_network = llamn_atari_lib.AMNNetwork(self.num_actions,
-                                                      self.feature_size,
-                                                      name=llamn_name)
-    else:
-      self.llamn_network = None
-
   def _load_llamn(self):
     if self.llamn_path:
-      scope_name = self.name + '/online/'
-      translate = llamn_atari_lib.translate_var_name(scope_name)
-      var_names = {translate(var.name): var
-                   for var in self.llamn_network.variables}
+      translate_fn = llamn_atari_lib.translate_var_name(self.llamn_path)
+      var_names = {translate_fn(var.name): var
+                   for var in self.online_convnet.variables}
+
+      ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
+      ckpt_path = ckpt.model_checkpoint_path
+
       saver = tf.train.Saver(var_list=var_names)
-      ckpt_path = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
-      saver.restore(self._sess, ckpt_path.model_checkpoint_path)
-      breakpoint()
+      saver.restore(self._sess, ckpt_path)
 
   def _create_network(self, name):
     """Builds a convolutional network that outputs Q-value distributions.
@@ -142,8 +132,10 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
       network: tf.keras.Model, the network instantiated by the Keras model.
     """
     scope_name = self.name + '/' + name
+    llamn_name = 'llamn' if self.llamn_path else None
+
     network = self.network(self.num_actions, self._num_atoms, self._support,
-                           self.feature_size, llamn_network=self.llamn_network,
+                           self.feature_size, llamn_name=llamn_name,
                            name=scope_name)
     return network
 
@@ -159,3 +151,17 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
       # ################################################################ #
       sleeping_memory.add(self.state_ph, self._net_outputs.features)
       nb_tr += self.batch_size
+
+  def bundle_and_checkpoint(self, checkpoint_dir, iteration_number):
+    if not tf.gfile.Exists(checkpoint_dir):
+      return None
+    # Call the Tensorflow saver to checkpoint the graph.
+    self._saver.save(
+        self._sess,
+        os.path.join(checkpoint_dir, 'tf_ckpt'),
+        global_step=iteration_number)
+
+    bundle_dictionary = {}
+    bundle_dictionary['state'] = self.state
+    bundle_dictionary['training_steps'] = self.training_steps
+    return bundle_dictionary
