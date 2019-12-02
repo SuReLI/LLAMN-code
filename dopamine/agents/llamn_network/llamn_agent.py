@@ -25,7 +25,8 @@ class AMNAgent:
 
   def __init__(self,
                sess,
-               num_actions,
+               max_num_actions,
+               expert_num_actions,
                expert_paths,
                llamn_path,
                name,
@@ -65,7 +66,8 @@ class AMNAgent:
                     max_tf_checkpoints_to_keep)
 
     vmax = float(vmax)
-    self.num_actions = num_actions
+    self.llamn_num_actions = max_num_actions
+    self.expert_num_actions = expert_num_actions
     self.feature_size = feature_size
     self.expert_paths = expert_paths
     self.ind_expert = 0
@@ -150,10 +152,10 @@ class AMNAgent:
 
   def _build_experts(self):
     self.experts = []
-    for path in self.expert_paths:
+    for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
-          self.num_actions, self.num_atoms, self.support,
+          num_actions, self.num_atoms, self.support,
           self.feature_size, llamn_name=None, name=expert_name)
       self.experts.append(expert)
 
@@ -161,7 +163,7 @@ class AMNAgent:
     if self.llamn_path:
       llamn_name = os.path.basename(self.llamn_path)
       self.previous_llamn = llamn_atari_lib.AMNNetwork(
-          self.num_actions, self.feature_size, name=llamn_name)
+          self.llamn_num_actions, self.feature_size, name=llamn_name)
 
   def _build_replay_buffers(self):
     self.replays = []
@@ -188,7 +190,7 @@ class AMNAgent:
       saver.restore(self._sess, ckpt_path.model_checkpoint_path)
 
   def _create_network(self):
-    network = self.network(self.num_actions, self.feature_size, name=self.name)
+    network = self.network(self.llamn_num_actions, self.feature_size, name=self.name)
     return network
 
   def _build_networks(self):
@@ -206,7 +208,7 @@ class AMNAgent:
     for i in range(self.nb_experts):
       replay_state = self.replays[i].states
       expert_mask = [n_action < self.experts[i].num_actions
-                     for n_action in range(self.num_actions)]
+                     for n_action in range(self.llamn_num_actions)]
 
       partial_output = tf.boolean_mask(net_logits, expert_mask, axis=1)
       q_argmax = tf.argmax(partial_output, axis=1)[0]

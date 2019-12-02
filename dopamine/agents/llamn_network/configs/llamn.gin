@@ -9,15 +9,15 @@ import gin.tf.external_configurables
 
 # Atari
 MasterRunner.games_names = ['Pong', 'Breakout']
-# MasterRunner.sticky_actions = True
+MasterRunner.sticky_actions = True
 
 # Runner
-Runner.num_iterations = 1
-Runner.training_steps = 100
-Runner.max_steps_per_episode = 100
+Runner.num_iterations = 2
+Runner.training_steps = 1000
+Runner.max_steps_per_episode = 1000
 
-LLAMNRunner.num_iterations = 1
-LLAMNRunner.training_steps = 100
+LLAMNRunner.num_iterations = 2
+LLAMNRunner.training_steps = 1000
 LLAMNRunner.max_steps_per_episode = 27000
 
 

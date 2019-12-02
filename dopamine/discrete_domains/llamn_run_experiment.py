@@ -182,13 +182,15 @@ class LLAMNRunner(TrainRunner):
 
     self.ind_env = 0
     self._environments = expert_envs
+    expert_num_actions = [env.action_space.n for env in expert_envs]
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     tf.reset_default_graph()
     self._sess = tf.Session('', config=config)
 
     self._agent = llamn_agent.AMNAgent(
-        self._sess, num_actions=num_actions,
+        self._sess,
+        max_num_actions=num_actions, expert_num_actions=expert_num_actions,
         llamn_path=llamn_path, expert_paths=expert_paths,
         name=self._name, summary_writer=self._summary_writer)
 
@@ -209,7 +211,7 @@ class LLAMNRunner(TrainRunner):
 
     for i in range(len(self._environments)):
 
-      print(f'\tTraining LLAMN on {self._environment.environment.game}')
+      print(f'\n\tTraining LLAMN on {self._environment.environment.game}')
       self.ind_env = i
       self._agent.ind_expert = self.ind_env
 

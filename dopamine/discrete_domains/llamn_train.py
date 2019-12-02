@@ -20,6 +20,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import datetime
 import warnings
 warnings.filterwarnings('ignore', r".*Passing \(type, 1\).*")
 
@@ -55,7 +56,10 @@ def main(unused_argv):
   """
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
   llamn_run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
-  runner = llamn_run_experiment.MasterRunner(FLAGS.base_dir)
+
+  expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+  base_dir = os.path.join(FLAGS.base_dir, expe_time)
+  runner = llamn_run_experiment.MasterRunner(base_dir)
   runner.run_experiment()
 
 
