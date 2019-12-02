@@ -5,7 +5,9 @@ from __future__ import print_function
 
 import os
 import math
+import random
 
+from dopamine.agents.dqn import dqn_agent
 from dopamine.replay_memory import prioritized_replay_buffer
 from dopamine.discrete_domains import atari_lib, llamn_atari_lib
 import numpy as np
@@ -42,6 +44,10 @@ class AMNAgent:
                update_horizon=1,
                min_replay_history=5000,
                update_period=4,
+               epsilon_fn=dqn_agent.linearly_decaying_epsilon,
+               epsilon_train=0.01,
+               epsilon_eval=0.001,
+               epsilon_decay_period=250000,
                num_atoms=51,
                vmax=10,
                tf_device='/cpu:*',
@@ -65,7 +71,7 @@ class AMNAgent:
     tf.logging.info('\t max_tf_checkpoints_to_keep: %d',
                     max_tf_checkpoints_to_keep)
 
-    vmax = float(vmax)
+    # LLAMN Initialization
     self.llamn_num_actions = max_num_actions
     self.expert_num_actions = expert_num_actions
     self.feature_size = feature_size
@@ -76,6 +82,9 @@ class AMNAgent:
     self.name = name
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
+
+    # Rainbow Init
+    vmax = float(vmax)
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
@@ -84,6 +93,10 @@ class AMNAgent:
     self.update_horizon = update_horizon
     self.cumulative_gamma = math.pow(gamma, update_horizon)
     self.min_replay_history = min_replay_history
+    self.epsilon_fn = epsilon_fn
+    self.epsilon_train = epsilon_train
+    self.epsilon_eval = epsilon_eval
+    self.epsilon_decay_period = epsilon_decay_period
     self.update_period = update_period
     self.num_atoms = num_atoms
     self.support = tf.linspace(-vmax, vmax, num_atoms)
@@ -298,7 +311,19 @@ class AMNAgent:
 
   def _select_action(self):
     # Choose the action with highest Q-value at the current state.
-    return self._sess.run(self.q_argmax, {self.state_ph: self.state})
+    if self.eval_mode:
+      epsilon = self.epsilon_eval
+    else:
+      epsilon = self.epsilon_fn(
+          self.epsilon_decay_period,
+          self.training_steps,
+          self.min_replay_history,
+          self.epsilon_train)
+
+    if random.random() < epsilon:
+      return random.randint(0, self.expert_num_actions[self.ind_expert] - 1)
+    else:
+      return self._sess.run(self.q_argmax, {self.state_ph: self.state})
 
   def _train_step(self):
 

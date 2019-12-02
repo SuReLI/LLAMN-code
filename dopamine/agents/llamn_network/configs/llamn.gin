@@ -8,16 +8,16 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-MasterRunner.games_names = ['Pong', 'Breakout']
+MasterRunner.games_names = [['Pong', 'Breakout']]
 MasterRunner.sticky_actions = True
 
 # Runner
-Runner.num_iterations = 2
-Runner.training_steps = 1000
-Runner.max_steps_per_episode = 1000
+Runner.num_iterations = 100
+Runner.training_steps = 250000
+Runner.max_steps_per_episode = 27000
 
-LLAMNRunner.num_iterations = 2
-LLAMNRunner.training_steps = 1000
+LLAMNRunner.num_iterations = 200
+LLAMNRunner.training_steps = 250000
 LLAMNRunner.max_steps_per_episode = 27000
 
 
@@ -51,4 +51,5 @@ AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 AMNAgent.optimizer = @tf.train.AdamOptimizer()
 
 # Replay Buffer
-WrappedPrioritizedReplayBuffer.replay_capacity = 1000
+WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
+WrappedPrioritizedReplayBuffer.batch_size = 32

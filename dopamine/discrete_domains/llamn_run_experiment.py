@@ -89,8 +89,11 @@ class MasterRunner:
 
     self.base_dir = base_dir
 
-    self.games = [Game(game_name, sticky_actions) for game_name in games_names]
-    self.max_num_actions = max([game.num_actions for game in self.games])
+    self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
+                  for list_names in games_names]
+
+    self.max_num_actions = max([game.num_actions for game_list in self.games
+                                for game in game_list])
 
   def run_experiment(self):
 
@@ -99,23 +102,27 @@ class MasterRunner:
     llamn_path = None
 
     for i in range(len(self.games)):
-      game = self.games[i]
 
-      print(f"Running iteration {i}")
-      print(f"\tCreating expert {i} on game {game}")
-      expert = ExpertRunner(self.base_dir,
-                            create_agent_fn=create_expert,
-                            create_environment_fn=game.env_factory(),
-                            llamn_path=llamn_path)
+      last_experts_paths = []
+      last_experts_envs = []
+      print(f"Running day {i}")
+      for game in self.games[i]:
 
-      last_experts_paths = [expert._base_dir]
-      last_experts_envs = [expert._environment]
+        print(f"\tCreating expert on game {game}")
+        expert = ExpertRunner(self.base_dir,
+                              create_agent_fn=create_expert,
+                              create_environment_fn=game.env_factory(),
+                              llamn_path=llamn_path)
 
-      print(f"\tRunning expert {i}")
-      tf.logging.info('Running expert')
-      expert.run_experiment()
-      print()
+        last_experts_paths.append(expert._base_dir)
+        last_experts_envs.append(expert._environment)
 
+        print(f"\tRunning expert on game {game}")
+        tf.logging.info('Running expert')
+        expert.run_experiment()
+        print('\n\n')
+
+      print(f"Running night {i}")
       print(f"\tCreating llamn {i}")
       llamn = LLAMNRunner(self.base_dir,
                           num_actions=self.max_num_actions,
@@ -126,7 +133,7 @@ class MasterRunner:
       print(f"\tRunning llamn {i}")
       tf.logging.info('Running llamn')
       llamn.run_experiment()
-      print()
+      print('\n\n')
 
 
 class ExpertRunner(TrainRunner):
@@ -208,13 +215,14 @@ class LLAMNRunner(TrainRunner):
   def _run_one_iteration(self, iteration):
     statistics = iteration_statistics.IterationStatistics()
     tf.logging.info('Starting iteration %d', iteration)
+    print(f'\n\tLLAMN Running iteration {iteration}')
 
     for i in range(len(self._environments)):
 
-      print(f'\n\tTraining LLAMN on {self._environment.environment.game}')
       self.ind_env = i
       self._agent.ind_expert = self.ind_env
 
+      print(f'\t\tTraining LLAMN on {self._environment.environment.game}')
       num_episodes_train, average_reward_train = self._run_train_phase(
           statistics)
 
