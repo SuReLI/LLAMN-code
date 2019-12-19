@@ -341,10 +341,11 @@ class Runner(object):
       num_episodes += 1
       # We use sys.stdout.write instead of tf.logging so as to flush frequently
       # without generating a line break.
-      sys.stdout.write('\tSteps executed: {} '.format(step_count) +
+      sys.stdout.write('\t\tSteps executed: {} '.format(step_count) +
                        'Episode length: {} '.format(episode_length) +
                        'Return: {}\r'.format(episode_return))
       sys.stdout.flush()
+    print()
     return step_count, sum_returns, num_episodes
 
   def _run_train_phase(self, statistics):

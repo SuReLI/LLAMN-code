@@ -80,7 +80,6 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                summary_writer=None,
                summary_writing_frequency=500):
 
-    self.num_actions = num_actions
     self.feature_size = feature_size
     self.llamn_path = llamn_path
     self.name = name
@@ -138,6 +137,17 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                            self.feature_size, llamn_name=llamn_name,
                            name=scope_name)
     return network
+
+  def _build_sync_op(self):
+    sync_qt_ops = []
+    trainables_online = tf.get_collection(
+        tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/online')
+    trainables_target = tf.get_collection(
+        tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/target')
+    for (w_online, w_target) in zip(trainables_online, trainables_target):
+      # Assign weights from online to target network.
+      sync_qt_ops.append(w_target.assign(w_online, use_locking=True))
+    return sync_qt_ops
 
   def fill_sleeping_memory(self, sleeping_memory, nb_transitions):
     nb_tr = 0
