@@ -19,38 +19,16 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import glob
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains import iteration_statistics
+from dopamine.discrete_domains.llamn_atari_lib import Game
 
 from dopamine.discrete_domains.run_experiment import TrainRunner
 
 import tensorflow as tf
 
 import gin.tf
-import gym
-from dopamine.discrete_domains.atari_lib import AtariPreprocessing
-
-
-def get_next_dir_index(base_dir, name):
-  network_dirs = glob.glob(os.path.join(base_dir, name + "_*"))
-  network_num = [0] + [int(exp_dir.rsplit('_', 1)[1]) for exp_dir in network_dirs]
-  return max(network_num) + 1
-
-
-def load_gin_configs(gin_files, gin_bindings):
-  """Loads gin configuration files.
-
-  Args:
-    gin_files: list, of paths to the gin configuration files for this
-      experiment.
-    gin_bindings: list, of gin parameter bindings to override the values in
-      the config files.
-  """
-  gin.parse_config_files_and_bindings(gin_files,
-                                      bindings=gin_bindings,
-                                      skip_unknown=False)
 
 
 def create_expert(sess, environment, llamn_path, name,
@@ -63,31 +41,17 @@ def create_expert(sess, environment, llamn_path, name,
       name=name, summary_writer=summary_writer)
 
 
-class Game:
-
-  def __init__(self, game_name, sticky_actions=True):
-    self.name = game_name
-    self.version = 'v0' if sticky_actions else 'v4'
-
-    self.full_name = f'{self.name}NoFrameskip-{self.version}'
-
-    env = gym.make(self.full_name)
-    self.num_actions = env.action_space.n
-
-  def create(self):
-    return AtariPreprocessing(gym.make(self.full_name).env)
-
-  def __repr__(self):
-    return self.name
-
-
 @gin.configurable
 class MasterRunner:
 
-  def __init__(self, base_dir, games_names=None, sticky_actions=True):
+  def __init__(self, base_dir, resume, games_names=None, sticky_actions=True):
     assert games_names is not None
 
-    self.base_dir = base_dir
+    if resume:
+      self.base_dir = base_dir
+    else:
+      self.base_dir = base_dir
+    self.ckpt = os.path.join(base_dir, 'progress')
 
     self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
                   for list_names in games_names]
@@ -95,47 +59,81 @@ class MasterRunner:
     self.max_num_actions = max([game.num_actions for game_list in self.games
                                 for game in game_list])
 
+    self._load_ckpt()
+
+  def _load_ckpt(self):
+    if os.path.exists(self.ckpt):
+      with open(self.ckpt, 'r') as ckpt:
+        progress = ckpt.read().split('_')
+      self.curr_day = int(progress[1])
+      self.curr_exp = int(progress[2])
+
+    else:
+      self.curr_day = 0
+      self.curr_exp = 0
+
+  def _write_ckpt(self):
+    phase = 'Night' if self.curr_exp == len(self.games[self.curr_day]) else 'Day'
+    data = f"{phase}_{self.curr_day}_{self.curr_exp}"
+
+    with open(self.ckpt, 'w') as ckpt:
+      ckpt.write(data)
+
   def run_experiment(self):
 
     tf.logging.info('Beginning Master Runner')
     print('Beginning Master Runner')
-    llamn_path = None
 
-    for i in range(len(self.games)):
+    while self.curr_day < len(self.games):
 
-      last_experts_paths = []
-      last_experts_envs = []
-      print(f"Running day {i}")
-      for game in self.games[i]:
+      print(f"Running day {self.curr_day}")
+
+      llamn_path = None
+      if self.curr_day > 0:
+        llamn_path = os.path.join(self.base_dir, f"night_{self.curr_day-1}")
+
+      while self.curr_exp < len(self.games[self.curr_day]):
+        game = self.games[self.curr_day][self.curr_exp]
 
         print(f"\tCreating expert on game {game}")
-        base_dir = os.path.join(self.base_dir, f"day_{i}")
+        base_dir = os.path.join(self.base_dir, f"day_{self.curr_day}")
         expert = ExpertRunner(base_dir,
                               create_agent_fn=create_expert,
                               environment=game,
                               llamn_path=llamn_path)
-
-        last_experts_paths.append(expert._base_dir)
-        last_experts_envs.append(expert._environment)
 
         print(f"\tRunning expert on game {game}")
         tf.logging.info('Running expert')
         expert.run_experiment()
         print('\n\n')
 
-      print(f"Running night {i}")
-      print(f"\tCreating llamn {i}")
-      base_dir = os.path.join(self.base_dir, f"night_{i}")
+        self._write_ckpt()
+        self.curr_exp += 1
+
+      self.curr_exp = 0
+
+      last_experts_paths = []
+      last_experts_envs = []
+      for game in self.games[self.curr_day]:
+        path = os.path.join(self.base_dir, f"day_{self.curr_day}/expert_{game.name}")
+        last_experts_paths.append(path)
+        last_experts_envs.append(game.create())
+
+      print(f"Running night {self.curr_day}")
+      print(f"\tCreating llamn {self.curr_day}")
+      base_dir = os.path.join(self.base_dir, f"night_{self.curr_day}")
       llamn = LLAMNRunner(base_dir,
                           num_actions=self.max_num_actions,
                           expert_envs=last_experts_envs,
                           expert_paths=last_experts_paths)
-      llamn_path = llamn._base_dir
 
-      print(f"\tRunning llamn {i}")
+      print(f"\tRunning llamn {self.curr_day}")
       tf.logging.info('Running llamn')
       llamn.run_experiment()
       print('\n\n')
+
+      self._write_ckpt()
+      self.curr_day += 1
 
 
 class ExpertRunner(TrainRunner):

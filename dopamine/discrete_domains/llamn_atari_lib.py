@@ -8,6 +8,9 @@ import collections
 import numpy as np
 import tensorflow as tf
 
+import gym
+from dopamine.discrete_domains.atari_lib import AtariPreprocessing
+
 
 ExpertNetworkType = collections.namedtuple(
     'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
@@ -15,21 +18,22 @@ AMNNetworkType = collections.namedtuple(
     'amn_network', ['output', 'logits', 'features'])
 
 
-def translate_var_name(llamn_path):
-  llamn_name = llamn_path.rsplit('/', 1)[1]
+class Game:
 
-  def translate(var_name):
-    if 'llamn' in var_name:
-      var = var_name.split('/', 3)[3]
-      var = llamn_name + '/' + var
+  def __init__(self, game_name, sticky_actions=True):
+    self.name = game_name
+    self.version = 'v0' if sticky_actions else 'v4'
 
-    else:
-      expert, var = var_name.split('/', 1)
-      expert_nb = int(expert.split('_')[1]) - 1
-      var = f'expert_{expert_nb}/' + var
+    self.full_name = f'{self.name}NoFrameskip-{self.version}'
 
-    return var.rsplit(':', 1)[0]
-  return translate
+    env = gym.make(self.full_name)
+    self.num_actions = env.action_space.n
+
+  def create(self):
+    return AtariPreprocessing(gym.make(self.full_name).env)
+
+  def __repr__(self):
+    return self.name
 
 
 class ExpertNetwork(tf.keras.Model):

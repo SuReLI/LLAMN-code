@@ -190,9 +190,12 @@ class AMNAgent:
   def _load_networks(self):
     for i in range(self.nb_experts):
       path, expert = self.expert_paths[i], self.experts[i]
+
+      ckpt = tf.train.get_checkpoint_state(path + "/checkpoints")
+      ckpt_path = ckpt.model_checkpoint_path
+
       saver = tf.train.Saver(var_list=expert.variables)
-      ckpt_path = tf.train.get_checkpoint_state(path + "/checkpoints")
-      saver.restore(self._sess, ckpt_path.model_checkpoint_path)
+      saver.restore(self._sess, ckpt_path)
 
     if self.llamn_path:
       ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
