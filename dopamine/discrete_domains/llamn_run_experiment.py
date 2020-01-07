@@ -74,8 +74,8 @@ class Game:
     env = gym.make(self.full_name)
     self.num_actions = env.action_space.n
 
-  def env_factory(self):
-    return lambda: AtariPreprocessing(gym.make(self.full_name).env)
+  def create(self):
+    return AtariPreprocessing(gym.make(self.full_name).env)
 
   def __repr__(self):
     return self.name
@@ -109,9 +109,10 @@ class MasterRunner:
       for game in self.games[i]:
 
         print(f"\tCreating expert on game {game}")
-        expert = ExpertRunner(self.base_dir,
+        base_dir = os.path.join(self.base_dir, f"day_{i}")
+        expert = ExpertRunner(base_dir,
                               create_agent_fn=create_expert,
-                              create_environment_fn=game.env_factory(),
+                              environment=game,
                               llamn_path=llamn_path)
 
         last_experts_paths.append(expert._base_dir)
@@ -124,7 +125,8 @@ class MasterRunner:
 
       print(f"Running night {i}")
       print(f"\tCreating llamn {i}")
-      llamn = LLAMNRunner(self.base_dir,
+      base_dir = os.path.join(self.base_dir, f"night_{i}")
+      llamn = LLAMNRunner(base_dir,
                           num_actions=self.max_num_actions,
                           expert_envs=last_experts_envs,
                           expert_paths=last_experts_paths)
@@ -141,17 +143,17 @@ class ExpertRunner(TrainRunner):
   def __init__(self,
                base_dir,
                create_agent_fn,
-               create_environment_fn,
+               environment,
                llamn_path=None):
 
-    self._index = get_next_dir_index(base_dir, 'expert')
-    name = f'expert_{self._index}'
+    name = f'expert_{environment.name}'
     base_dir = os.path.join(base_dir, name)
 
     def create_expert_fn(*args, **kwargs):
       return create_agent_fn(*args, **kwargs, llamn_path=llamn_path, name=name)
 
-    super().__init__(base_dir, create_expert_fn, create_environment_fn)
+    tf.reset_default_graph()
+    super().__init__(base_dir, create_expert_fn, environment.create)
 
     self._agent._load_llamn()
 
@@ -176,14 +178,13 @@ class LLAMNRunner(TrainRunner):
     self._num_iterations = num_iterations
     self._training_steps = training_steps
     self._max_steps_per_episode = max_steps_per_episode
-    self._index = get_next_dir_index(base_dir, 'llamn')
-    self._name = f'llamn_{self._index}'
-    self._base_dir = os.path.join(base_dir, self._name)
+    self._base_dir = base_dir
     self._create_directories()
     self._summary_writer = tf.summary.FileWriter(self._base_dir)
 
-    if self._index > 1:
-      llamn_path = os.path.join(base_dir, f'llamn_{self._index - 1}')
+    index = int(base_dir.rsplit('_', 1)[1])
+    if index > 0:
+      llamn_path = base_dir.replace(f'night_{index}', f'night_{index-1}')
     else:
       llamn_path = None
 
@@ -199,7 +200,7 @@ class LLAMNRunner(TrainRunner):
         self._sess,
         max_num_actions=num_actions, expert_num_actions=expert_num_actions,
         llamn_path=llamn_path, expert_paths=expert_paths,
-        name=self._name, summary_writer=self._summary_writer)
+        summary_writer=self._summary_writer)
 
     self._summary_writer.add_graph(graph=tf.get_default_graph())
     self._sess.run(tf.global_variables_initializer())

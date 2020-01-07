@@ -31,7 +31,6 @@ class AMNAgent:
                expert_num_actions,
                expert_paths,
                llamn_path,
-               name,
                sleeping_memory=None,
                feature_weight=0.2,
                ewc_weight=0.1,
@@ -79,7 +78,6 @@ class AMNAgent:
     self.ind_expert = 0
     self.nb_experts = len(expert_paths)
     self.llamn_path = llamn_path
-    self.name = name
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
 
@@ -174,9 +172,8 @@ class AMNAgent:
 
   def _build_prev_llamn(self):
     if self.llamn_path:
-      llamn_name = os.path.basename(self.llamn_path)
       self.previous_llamn = llamn_atari_lib.AMNNetwork(
-          self.llamn_num_actions, self.feature_size, name=llamn_name)
+          self.llamn_num_actions, self.feature_size, name='prev_llamn')
 
   def _build_replay_buffers(self):
     self.replays = []
@@ -198,12 +195,16 @@ class AMNAgent:
       saver.restore(self._sess, ckpt_path.model_checkpoint_path)
 
     if self.llamn_path:
-      saver = tf.train.Saver(var_list=self.previous_llamn.variables)
-      ckpt_path = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
-      saver.restore(self._sess, ckpt_path.model_checkpoint_path)
+      ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
+      ckpt_path = ckpt.model_checkpoint_path
+
+      var_names = {var.name[5:-2]: var
+                   for var in self.previous_llamn.variables}
+      saver = tf.train.Saver(var_list=var_names)
+      saver.restore(self._sess, ckpt_path)
 
   def _create_network(self):
-    network = self.network(self.llamn_num_actions, self.feature_size, name=self.name)
+    network = self.network(self.llamn_num_actions, self.feature_size, name='llamn')
     return network
 
   def _build_networks(self):

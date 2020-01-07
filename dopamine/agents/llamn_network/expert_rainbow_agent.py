@@ -111,9 +111,11 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
   def _load_llamn(self):
     if self.llamn_path:
-      translate_fn = llamn_atari_lib.translate_var_name(self.llamn_path)
-      var_names = {translate_fn(var.name): var
-                   for var in self.online_convnet.variables}
+      # Restore llamn variables whose name looks like
+      # 'expert_pong/online/llamn/conv_1:0' from variable with name 'llamn/conv_1'
+      var_names = {var.name.split('/', 2)[2][:-2]: var
+                   for var in self.online_convnet.variables
+                   if 'llamn' in var.name}
 
       ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
@@ -144,6 +146,9 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
         tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/online')
     trainables_target = tf.get_collection(
         tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/target')
+    assert trainables_online, "No variables found for online network"
+    assert trainables_target, "No variables found for online target"
+
     for (w_online, w_target) in zip(trainables_online, trainables_target):
       # Assign weights from online to target network.
       sync_qt_ops.append(w_target.assign(w_online, use_locking=True))

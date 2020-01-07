@@ -8,7 +8,7 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-MasterRunner.games_names = [['Pong', 'Breakout']]
+MasterRunner.games_names = [['Pong', 'Breakout'], ['SpaceInvaders']]
 MasterRunner.sticky_actions = True
 
 # Runner
