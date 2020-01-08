@@ -335,8 +335,8 @@ class AMNAgent:
       if self.training_steps % self.update_period == 0:
         self._sess.run(self._train_op)
         if (self.summary_writer is not None
-            and self.training_steps > 0
-            and self.training_steps % self.summary_writing_frequency == 0):
+           and self.training_steps > 0
+           and self.training_steps % self.summary_writing_frequency == 0):
           summary = self._sess.run(self._merged_summaries)
           self.summary_writer.add_summary(summary, self.training_steps)
 

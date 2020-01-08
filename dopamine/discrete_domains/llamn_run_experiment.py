@@ -47,10 +47,7 @@ class MasterRunner:
   def __init__(self, base_dir, resume, games_names=None, sticky_actions=True):
     assert games_names is not None
 
-    if resume:
-      self.base_dir = base_dir
-    else:
-      self.base_dir = base_dir
+    self.base_dir = base_dir
     self.ckpt = os.path.join(base_dir, 'progress')
 
     self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
@@ -66,7 +63,10 @@ class MasterRunner:
       with open(self.ckpt, 'r') as ckpt:
         progress = ckpt.read().split('_')
       self.curr_day = int(progress[1])
-      self.curr_exp = int(progress[2])
+      self.curr_exp = int(progress[2]) + 1
+      if self.curr_exp > len(self.games[self.curr_day]):
+        self.curr_day += 1
+        self.curr_exp = 0
 
     else:
       self.curr_day = 0
@@ -110,8 +110,6 @@ class MasterRunner:
         self._write_ckpt()
         self.curr_exp += 1
 
-      self.curr_exp = 0
-
       last_experts_paths = []
       last_experts_envs = []
       for game in self.games[self.curr_day]:
@@ -133,6 +131,7 @@ class MasterRunner:
       print('\n\n')
 
       self._write_ckpt()
+      self.curr_exp = 0
       self.curr_day += 1
 
 

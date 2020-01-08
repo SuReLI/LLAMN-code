@@ -21,6 +21,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import glob
 import datetime
 import warnings
 warnings.filterwarnings('ignore', r".*Passing \(type, 1\).*")
@@ -51,6 +52,18 @@ flags.DEFINE_boolean('resume', False, 'Whether to resume a run or not')
 FLAGS = flags.FLAGS
 
 
+def get_base_dir(resume):
+  if resume:
+    path = os.path.join(FLAGS.base_dir, '*')
+    base_dir = max(glob.glob(path))
+
+  else:
+    expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    base_dir = os.path.join(FLAGS.base_dir, expe_time)
+
+  return base_dir
+
+
 def main(unused_argv):
   """Main method.
 
@@ -60,8 +73,8 @@ def main(unused_argv):
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
   run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
 
-  expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-  base_dir = os.path.join(FLAGS.base_dir, expe_time)
+  base_dir = get_base_dir(FLAGS.resume)
+  print(f'\033[91mRunning in directory {base_dir}\033[0m')
   runner = llamn_run_experiment.MasterRunner(base_dir, FLAGS.resume)
   runner.run_experiment()
 

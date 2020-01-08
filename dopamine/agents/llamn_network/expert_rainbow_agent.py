@@ -37,8 +37,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-
 from dopamine.agents.dqn import dqn_agent
 from dopamine.agents.rainbow import rainbow_agent
 from dopamine.discrete_domains import llamn_atari_lib
@@ -166,17 +164,3 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
       # ################################################################ #
       sleeping_memory.add(self.state_ph, self._net_outputs.features)
       nb_tr += self.batch_size
-
-  def bundle_and_checkpoint(self, checkpoint_dir, iteration_number):
-    if not tf.gfile.Exists(checkpoint_dir):
-      return None
-    # Call the Tensorflow saver to checkpoint the graph.
-    self._saver.save(
-        self._sess,
-        os.path.join(checkpoint_dir, 'tf_ckpt'),
-        global_step=iteration_number)
-
-    bundle_dictionary = {}
-    bundle_dictionary['state'] = self.state
-    bundle_dictionary['training_steps'] = self.training_steps
-    return bundle_dictionary
