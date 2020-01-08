@@ -44,7 +44,7 @@ def create_expert(sess, environment, llamn_path, name,
 @gin.configurable
 class MasterRunner:
 
-  def __init__(self, base_dir, resume, games_names=None, sticky_actions=True):
+  def __init__(self, base_dir, games_names=None, sticky_actions=True):
     assert games_names is not None
 
     self.base_dir = base_dir

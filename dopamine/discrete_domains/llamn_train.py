@@ -57,7 +57,10 @@ FLAGS = flags.FLAGS
 def get_base_dir(resume):
   if resume:
     path = os.path.join(FLAGS.base_dir, '*')
-    base_dir = max(glob.glob(path))
+    expe_list = glob.glob(path)
+    if not expe_list:
+      raise FileNotFoundError("No checkpoint to resume")
+    base_dir = max(expe_list)
 
   else:
     expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -77,7 +80,7 @@ def main(unused_argv):
 
   base_dir = get_base_dir(FLAGS.resume)
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
-  runner = llamn_run_experiment.MasterRunner(base_dir, FLAGS.resume)
+  runner = llamn_run_experiment.MasterRunner(base_dir)
   runner.run_experiment()
   print()
 
