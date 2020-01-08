@@ -30,6 +30,8 @@ warnings.filterwarnings('ignore', r".*Passing \(type, 1\).*")
 from absl import app
 from absl import flags
 
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
@@ -77,6 +79,7 @@ def main(unused_argv):
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
   runner = llamn_run_experiment.MasterRunner(base_dir, FLAGS.resume)
   runner.run_experiment()
+  print()
 
 
 if __name__ == '__main__':

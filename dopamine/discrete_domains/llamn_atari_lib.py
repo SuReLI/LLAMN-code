@@ -79,13 +79,12 @@ class ExpertNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    x = self.dense1(x)
-    features = tf.identity(x)
+    features = self.dense1(x)
 
     if self.llamn_network:
       llamn_features = self.llamn_network(state).output
       llamn_features = tf.stop_gradient(llamn_features)
-      x = tf.concat([x, llamn_features], axis=1)
+      features = tf.concat([features, llamn_features], axis=1)
       # ################################################################ #
       #                               TODO                               #
       # ---------------------------------------------------------------- #
@@ -99,7 +98,7 @@ class ExpertNetwork(tf.keras.Model):
     # print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
     # print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
     # print()        # debug
-    x = self.dense2(x)
+    x = self.dense2(features)
     logits = tf.reshape(x, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
