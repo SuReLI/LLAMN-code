@@ -50,12 +50,18 @@ flags.DEFINE_multi_string(
     '(e.g. "DQNAgent.epsilon_train=0.1",'
     '      "create_environment.game_name="Pong"").')
 flags.DEFINE_boolean('resume', False, 'Whether to resume a run or not')
+flags.DEFINE_string('ckpt_dir', None, 'Checkpoint dir from which to resume')
 
 FLAGS = flags.FLAGS
 
 
-def get_base_dir(resume):
+def get_base_dir(resume, ckpt_dir):
   if resume:
+    if ckpt_dir is not None:
+      if not os.path.exists(ckpt_dir):
+        raise FileNotFoundError("No checkpoint found at this path")
+      return ckpt_dir
+
     path = os.path.join(FLAGS.base_dir, '*')
     expe_list = glob.glob(path)
     if not expe_list:
@@ -78,7 +84,7 @@ def main(unused_argv):
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
   run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
 
-  base_dir = get_base_dir(FLAGS.resume)
+  base_dir = get_base_dir(FLAGS.resume, FLAGS.ckpt_dir)
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
   runner = llamn_run_experiment.MasterRunner(base_dir)
   runner.run_experiment()

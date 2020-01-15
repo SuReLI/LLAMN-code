@@ -48,7 +48,7 @@ class MasterRunner:
     assert games_names is not None
 
     self.base_dir = base_dir
-    self.ckpt = os.path.join(base_dir, 'progress')
+    self.sentinel = os.path.join(base_dir, 'progress')
 
     self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
                   for list_names in games_names]
@@ -56,12 +56,21 @@ class MasterRunner:
     self.max_num_actions = max([game.num_actions for game_list in self.games
                                 for game in game_list])
 
-    self._load_ckpt()
+    self._save_gin_config()
+    self._load_sentinel()
 
-  def _load_ckpt(self):
-    if os.path.exists(self.ckpt):
-      with open(self.ckpt, 'r') as ckpt:
-        progress = ckpt.read().split('_')
+  def _save_gin_config(self):
+    if not os.path.exists(self.base_dir):
+      os.makedirs(self.base_dir, exist_ok=True)
+
+    config_file = os.path.join(self.base_dir, 'config.gin')
+    with open(config_file, 'w') as config:
+      config.write(gin.config_str())
+
+  def _load_sentinel(self):
+    if os.path.exists(self.sentinel):
+      with open(self.sentinel, 'r') as sentinel:
+        progress = sentinel.read().split('_')
       self.curr_day = int(progress[1])
       self.curr_exp = int(progress[2]) + 1
       if self.curr_exp > len(self.games[self.curr_day]):
@@ -72,12 +81,15 @@ class MasterRunner:
       self.curr_day = 0
       self.curr_exp = 0
 
-  def _write_ckpt(self):
+  def _write_sentinel(self):
     phase = 'Night' if self.curr_exp == len(self.games[self.curr_day]) else 'Day'
     data = f"{phase}_{self.curr_day}_{self.curr_exp}"
 
-    with open(self.ckpt, 'w') as ckpt:
-      ckpt.write(data)
+    try:
+      with open(self.sentinel, 'w') as sentinel:
+        sentinel.write(data)
+    except FileNotFoundError:
+      pass
 
   def run_experiment(self):
 
@@ -107,7 +119,7 @@ class MasterRunner:
         expert.run_experiment()
         print('\n\n')
 
-        self._write_ckpt()
+        self._write_sentinel()
         self.curr_exp += 1
 
       last_experts_paths = []
@@ -130,7 +142,7 @@ class MasterRunner:
       llamn.run_experiment()
       print('\n\n')
 
-      self._write_ckpt()
+      self._write_sentinel()
       self.curr_exp = 0
       self.curr_day += 1
 
