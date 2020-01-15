@@ -163,11 +163,12 @@ class AMNAgent:
 
   def _build_experts(self):
     self.experts = []
+    llamn_name = 'llamn' if self.llamn_path else None
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
           num_actions, self.num_atoms, self.support,
-          self.feature_size, llamn_name=None, name=expert_name)
+          self.feature_size, llamn_name=llamn_name, name=expert_name)
       self.experts.append(expert)
 
   def _build_prev_llamn(self):
@@ -187,7 +188,7 @@ class AMNAgent:
           observation_dtype=self.observation_dtype.as_numpy_dtype)
       self.replays.append(replay)
 
-  def _load_networks(self):
+  def load_networks(self):
     for i in range(self.nb_experts):
       path, expert = self.expert_paths[i], self.experts[i]
 

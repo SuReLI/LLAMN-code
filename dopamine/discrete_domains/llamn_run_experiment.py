@@ -204,7 +204,7 @@ class LLAMNRunner(TrainRunner):
 
     self._initialize_checkpointer_and_maybe_resume(checkpoint_file_prefix)
 
-    self._agent._load_networks()
+    self._agent.load_networks()
 
   @property
   def _environment(self):

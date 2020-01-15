@@ -63,8 +63,11 @@ class ExpertNetwork(tf.keras.Model):
         512, activation=activation_fn,
         kernel_initializer=self.kernel_initializer, name='dense_1')
     self.dense2 = tf.keras.layers.Dense(
+        feature_size, activation=activation_fn,
+        kernel_initializer=self.kernel_initializer, name='dense_2')
+    self.dense3 = tf.keras.layers.Dense(
         num_actions * num_atoms, kernel_initializer=self.kernel_initializer,
-        name='dense_2')
+        name='dense_3')
 
     if llamn_name:
       self.llamn_network = AMNNetwork(num_actions, feature_size, llamn_name)
@@ -79,27 +82,27 @@ class ExpertNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    features = self.dense1(x)
+    x = self.dense1(x)
 
     if self.llamn_network:
-      llamn_features = self.llamn_network(state).output
-      llamn_features = tf.stop_gradient(llamn_features)
-      features = tf.concat([features, llamn_features], axis=1)
+      llamn_output = self.llamn_network(state).output
+      llamn_output = tf.stop_gradient(llamn_output)
+      x = tf.concat([llamn_output, x], axis=1)
       # ################################################################ #
       #                               TODO                               #
       # ---------------------------------------------------------------- #
-      # + Check if concatenation is OK                                   #
       # + Check if stop_grad is working and llamn_network is not updated #
       # ################################################################ #
-      # print("llamn_features :\n", llamn_features, '\n\n', '-'*200, '\n')        # debug
+      # print("llamn_output :\n", llamn_output, '\n\n', '-'*200, '\n')        # debug
       # print("x :\n", x, '\n\n', '-'*200, '\n')        # debug
 
     # print("self.llamn_network :\n", self.llamn_network, '\n\n', '-'*200, '\n')    # debug
     # print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
     # print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
     # print()        # debug
-    x = self.dense2(features)
-    logits = tf.reshape(x, [-1, self.num_actions, self.num_atoms])
+    features = self.dense2(x)
+    output = self.dense3(features)
+    logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
     return ExpertNetworkType(features, q_values, logits, probabilities)

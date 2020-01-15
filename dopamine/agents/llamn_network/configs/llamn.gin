@@ -25,7 +25,7 @@ LLAMNRunner.max_steps_per_episode = 27000
 update_horizon = 3
 
 # Expert
-ExpertAgent.feature_size = 512
+ExpertAgent.feature_size = 256
 ExpertAgent.num_atoms = 51
 ExpertAgent.vmax = 10.
 ExpertAgent.gamma = 0.99
