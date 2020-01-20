@@ -239,3 +239,15 @@ class LLAMNRunner(TrainRunner):
       self._save_tensorboard_summaries(iteration, num_episodes_train,
                                        average_reward_train)
     return statistics.data_lists
+
+  def _save_tensorboard_summaries(self, iteration, num_episodes,
+                                  average_reward):
+    """Save statistics as tensorboard summaries."""
+    game_name = self._environment.environment.game
+    summary = tf.Summary(value=[
+        tf.Summary.Value(
+            tag=f'Train/{game_name}/NumEpisodes', simple_value=num_episodes),
+        tf.Summary.Value(
+            tag=f'Train/{game_name}/AverageReturns', simple_value=average_reward),
+    ])
+    self._summary_writer.add_summary(summary, iteration)

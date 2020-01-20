@@ -122,8 +122,8 @@ class AMNAgent:
       self._train_ops = self._build_train_ops()
 
     if self.summary_writer is not None:
-      # All tf.summaries should have been defined prior to running this.
-      self._merged_summaries = tf.summary.merge_all()
+      self._merged_summaries = [tf.summary.merge(s) for s in self.summaries]
+
     self._sess = sess
 
     var_map = atari_lib.maybe_transform_variable_names(tf.all_variables())
@@ -160,6 +160,10 @@ class AMNAgent:
   @training_steps.setter
   def training_steps(self, value):
     self.training_steps_list[self.ind_expert] = value
+
+  @property
+  def merged_summary(self):
+    return self._merged_summaries[self.ind_expert]
 
   def _build_experts(self):
     self.experts = []
@@ -269,23 +273,33 @@ class AMNAgent:
 
   def _build_train_ops(self):
     train_ops = []
+    self.summaries = [[] for i in range(self.nb_experts)]
 
-    ewc_loss = self._build_ewc_loss()
+    with tf.variable_scope('Losses'):
+      ewc_loss = self._build_ewc_loss()
 
-    for i_task in range(self.nb_experts):
+      if self.summary_writer is not None and ewc_loss:
+        ewc_sum = tf.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
+        for list_sum in self.summaries:
+          list_sum.append(ewc_sum)
 
-      xent_loss = self._build_xent_loss(i_task)
-      l2_loss = self._build_l2_loss(i_task)
-      loss = xent_loss + self.feature_weight * l2_loss
+      for i_task in range(self.nb_experts):
 
-      if ewc_loss:
-        loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
+        xent_loss = self._build_xent_loss(i_task)
+        l2_loss = self._build_l2_loss(i_task)
+        loss = xent_loss + self.feature_weight * l2_loss
 
-      if self.summary_writer is not None:
-        with tf.variable_scope('Losses'):
-          tf.summary.scalar('Loss', tf.reduce_mean(loss))
+        if ewc_loss:
+          loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
-      train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
+        if self.summary_writer is not None:
+          self.summaries[i_task] += [
+              tf.summary.scalar(f'Loss_{i_task}/X_entropy', tf.reduce_mean(xent_loss)),
+              tf.summary.scalar(f'Loss_{i_task}/L2', tf.reduce_mean(l2_loss)),
+              tf.summary.scalar(f'Loss_{i_task}/Total_loss', tf.reduce_mean(loss))
+          ]
+
+        train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
 
     return train_ops
 
@@ -338,7 +352,7 @@ class AMNAgent:
         if (self.summary_writer is not None
            and self.training_steps > 0
            and self.training_steps % self.summary_writing_frequency == 0):
-          summary = self._sess.run(self._merged_summaries)
+          summary = self._sess.run(self.merged_summary)
           self.summary_writer.add_summary(summary, self.training_steps)
 
     self.training_steps += 1
