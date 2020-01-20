@@ -29,6 +29,8 @@ class Game:
     env = gym.make(self.full_name)
     self.num_actions = env.action_space.n
 
+    self.finished = False     # used for multiprocessing
+
   def create(self):
     return AtariPreprocessing(gym.make(self.full_name).env)
 

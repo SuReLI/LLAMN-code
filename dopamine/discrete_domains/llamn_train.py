@@ -51,6 +51,8 @@ flags.DEFINE_multi_string(
     '      "create_environment.game_name="Pong"").')
 flags.DEFINE_boolean('resume', False, 'Whether to resume a run or not')
 flags.DEFINE_string('ckpt_dir', None, 'Checkpoint dir from which to resume')
+flags.DEFINE_boolean('no_parallel', False,
+                     'Whether to use multiple processes or not')
 
 FLAGS = flags.FLAGS
 
@@ -86,7 +88,7 @@ def main(unused_argv):
 
   base_dir = get_base_dir(FLAGS.resume, FLAGS.ckpt_dir)
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
-  runner = llamn_run_experiment.MasterRunner(base_dir)
+  runner = llamn_run_experiment.MasterRunner(base_dir, not FLAGS.no_parallel)
   runner.run_experiment()
   print()
 

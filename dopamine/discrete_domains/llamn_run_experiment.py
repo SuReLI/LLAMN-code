@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+from multiprocessing import Process, Lock
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains import iteration_statistics
@@ -44,10 +45,11 @@ def create_expert(sess, environment, llamn_path, name,
 @gin.configurable
 class MasterRunner:
 
-  def __init__(self, base_dir, games_names=None, sticky_actions=True):
+  def __init__(self, base_dir, parallel, games_names=None, sticky_actions=True):
     assert games_names is not None
 
     self.base_dir = base_dir
+    self.parallel = parallel
     self.sentinel = os.path.join(base_dir, 'progress')
 
     self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
@@ -58,6 +60,8 @@ class MasterRunner:
 
     self._save_gin_config()
     self._load_sentinel()
+
+    self.lock = Lock()
 
   def _save_gin_config(self):
     if not os.path.exists(self.base_dir):
@@ -70,26 +74,60 @@ class MasterRunner:
   def _load_sentinel(self):
     if os.path.exists(self.sentinel):
       with open(self.sentinel, 'r') as sentinel:
-        progress = sentinel.read().split('_')
-      self.curr_day = int(progress[1])
-      self.curr_exp = int(progress[2]) + 1
-      if self.curr_exp > len(self.games[self.curr_day]):
-        self.curr_day += 1
-        self.curr_exp = 0
+        progress = sentinel.read().split()
 
     else:
-      self.curr_day = 0
-      self.curr_exp = 0
-
-  def _write_sentinel(self):
-    phase = 'Night' if self.curr_exp == len(self.games[self.curr_day]) else 'Day'
-    data = f"{phase}_{self.curr_day}_{self.curr_exp}"
-
-    try:
       with open(self.sentinel, 'w') as sentinel:
-        sentinel.write(data)
-    except FileNotFoundError:
-      pass
+        sentinel.write('Day_0\n')
+      progress = ['Day_0']
+
+    self.curr_day = int(progress[0].split('_')[1])
+    if self.curr_day >= len(self.games):
+      return
+
+    if 'Day' in progress[0]:
+      for game in self.games[self.curr_day]:
+        game.finished = (game.name in progress[1:])
+
+  def _write_sentinel(self, game=None):
+    # End of the night
+    if game is None:
+      with open(self.sentinel, 'w') as sentinel:
+        sentinel.write(f'Day_{self.curr_day}\n')
+
+    # An expert just finished its day
+    else:
+      self.lock.acquire()
+      try:
+        with open(self.sentinel, 'a') as sentinel:
+          sentinel.write(game + '\n')
+      except FileNotFoundError:
+        pass
+      finally:
+        self.lock.release()
+
+  def run_expert(self, base_dir, llamn_path, game):
+    expert = ExpertRunner(base_dir,
+                          create_agent_fn=create_expert,
+                          environment=game,
+                          llamn_path=llamn_path)
+
+    tf.logging.info('Running expert')
+
+    print(f"\tRunning expert {game.name}")
+    expert.run_experiment()
+    self._write_sentinel(game.name)
+
+  def run_llamn(self, base_dir, envs, paths):
+    llamn = LLAMNRunner(base_dir,
+                        num_actions=self.max_num_actions,
+                        expert_envs=envs,
+                        expert_paths=paths)
+
+    print(f"\tRunning llamn {self.curr_day}")
+    tf.logging.info('Running llamn')
+    llamn.run_experiment()
+    print('\n\n')
 
   def run_experiment(self):
 
@@ -100,28 +138,30 @@ class MasterRunner:
 
       print(f"Running day {self.curr_day}")
 
+      base_dir = os.path.join(self.base_dir, f"day_{self.curr_day}")
       llamn_path = None
       if self.curr_day > 0:
         llamn_path = os.path.join(self.base_dir, f"night_{self.curr_day-1}")
 
-      while self.curr_exp < len(self.games[self.curr_day]):
-        game = self.games[self.curr_day][self.curr_exp]
+      if self.parallel:
+        # Run experts in different processes
+        processes = []
+        for game in self.games[self.curr_day]:
+          if not game.finished:
+            processes.append(Process(target=self.run_expert,
+                                     args=(base_dir, llamn_path, game,)))
 
-        print(f"\tCreating expert on game {game}")
-        base_dir = os.path.join(self.base_dir, f"day_{self.curr_day}")
-        expert = ExpertRunner(base_dir,
-                              create_agent_fn=create_expert,
-                              environment=game,
-                              llamn_path=llamn_path)
+        for proc in processes:
+          proc.start()
+        for proc in processes:
+          proc.join()
 
-        print(f"\tRunning expert on game {game}")
-        tf.logging.info('Running expert')
-        expert.run_experiment()
-        print('\n\n')
+      else:
+        for game in self.games[self.curr_day]:
+          if not game.finished:
+            self.run_expert(base_dir, llamn_path, game)
 
-        self._write_sentinel()
-        self.curr_exp += 1
-
+      # Run LLAMN
       last_experts_paths = []
       last_experts_envs = []
       for game in self.games[self.curr_day]:
@@ -132,19 +172,19 @@ class MasterRunner:
       print(f"Running night {self.curr_day}")
       print(f"\tCreating llamn {self.curr_day}")
       base_dir = os.path.join(self.base_dir, f"night_{self.curr_day}")
-      llamn = LLAMNRunner(base_dir,
-                          num_actions=self.max_num_actions,
-                          expert_envs=last_experts_envs,
-                          expert_paths=last_experts_paths)
 
-      print(f"\tRunning llamn {self.curr_day}")
-      tf.logging.info('Running llamn')
-      llamn.run_experiment()
-      print('\n\n')
+      if self.parallel:
+        llamn_proc = Process(target=self.run_llamn,
+                             args=(base_dir, last_experts_envs, last_experts_paths))
 
-      self._write_sentinel()
-      self.curr_exp = 0
+        llamn_proc.start()
+        llamn_proc.join()
+
+      else:
+        self.run_llamn(base_dir, last_experts_envs, last_experts_paths)
+
       self.curr_day += 1
+      self._write_sentinel()
 
 
 class ExpertRunner(TrainRunner):
