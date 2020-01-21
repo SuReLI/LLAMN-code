@@ -32,7 +32,7 @@ class AMNAgent:
                expert_paths,
                llamn_path,
                sleeping_memory=None,
-               feature_weight=0.2,
+               feature_weight=0.01,
                ewc_weight=0.1,
                feature_size=512,
                observation_shape=atari_lib.NATURE_DQN_OBSERVATION_SHAPE,
@@ -255,7 +255,7 @@ class AMNAgent:
     expert_softmax = self._expert_q_softmax[i_task]
     net_softmax = self._net_q_softmax[i_task]
 
-    loss = expert_softmax * tf.log(net_softmax)
+    loss = expert_softmax * tf.log(net_softmax + 1e-6)
     return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_l2_loss(self, i_task):
@@ -263,7 +263,7 @@ class AMNAgent:
     net_features = self._net_features[i_task]
 
     loss = tf.nn.l2_loss(expert_features - net_features)
-    return tf.reduce_mean(-tf.reduce_sum(loss))
+    return loss
 
   def _build_ewc_loss(self):
     if self.llamn_path is None:
@@ -293,10 +293,11 @@ class AMNAgent:
           loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
 
         if self.summary_writer is not None:
+          game_name = self.expert_paths[i_task].rsplit('_', 1)[1]
           self.summaries[i_task] += [
-              tf.summary.scalar(f'Loss_{i_task}/X_entropy', tf.reduce_mean(xent_loss)),
-              tf.summary.scalar(f'Loss_{i_task}/L2', tf.reduce_mean(l2_loss)),
-              tf.summary.scalar(f'Loss_{i_task}/Total_loss', tf.reduce_mean(loss))
+              tf.summary.scalar(f'{game_name}/Loss_{i_task}/X_entropy', tf.reduce_mean(xent_loss)),
+              tf.summary.scalar(f'{game_name}/Loss_{i_task}/L2', tf.reduce_mean(l2_loss)),
+              tf.summary.scalar(f'{game_name}/Loss_{i_task}/Total_loss', tf.reduce_mean(loss))
           ]
 
         train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
@@ -401,7 +402,15 @@ class AMNAgent:
         self._sess,
         os.path.join(checkpoint_dir, 'tf_ckpt'),
         global_step=iteration_number)
-    return
+    for i in range(self.nb_experts):
+      game_name = self.expert_paths[i].rsplit('_', 1)[1]
+      replay_path = os.path.join(checkpoint_dir, f'replay_{game_name}')
+      tf.gfile.MkDir(replay_path)
+      self.replays[i].save(replay_path, iteration_number)
+    bundle_dictionary = {}
+    bundle_dictionary['states'] = self.states
+    bundle_dictionary['training_steps'] = self.training_steps_list
+    return bundle_dictionary
 
   def unbundle(self, checkpoint_dir, iteration_number, bundle_dictionary):
     """Restores the agent from a checkpoint.
@@ -424,7 +433,10 @@ class AMNAgent:
     try:
       # self._replay.load() will throw a NotFoundError if it does not find all
       # the necessary files.
-      self._replay.load(checkpoint_dir, iteration_number)
+      for i in range(self.nb_experts):
+        game_name = self.expert_paths[i].rsplit('_', 1)[1]
+        replay_path = os.path.join(checkpoint_dir, f'replay_{game_name}')
+        self.replays[i].load(replay_path, iteration_number)
     except tf.errors.NotFoundError:
       if not self.allow_partial_reload:
         # If we don't allow partial reloads, we will return False.
