@@ -255,7 +255,8 @@ class AMNAgent:
     expert_softmax = self._expert_q_softmax[i_task]
     net_softmax = self._net_q_softmax[i_task]
 
-    loss = expert_softmax * tf.log(net_softmax + 1e-6)
+    log_net_softmax = tf.minimum(tf.log(net_softmax + 1e-10), 0.0)
+    loss = expert_softmax * log_net_softmax
     return tf.reduce_mean(-tf.reduce_sum(loss))
 
   def _build_l2_loss(self, i_task):
@@ -290,7 +291,7 @@ class AMNAgent:
         loss = xent_loss + self.feature_weight * l2_loss
 
         if ewc_loss:
-          loss = self.ewc_weight * loss + (1 - self.ewc_weight) * ewc_loss
+          loss = self.ewc_weight * ewc_loss + (1 - self.ewc_weight) * loss
 
         if self.summary_writer is not None:
           game_name = self.expert_paths[i_task].rsplit('_', 1)[1]
@@ -409,7 +410,7 @@ class AMNAgent:
       self.replays[i].save(replay_path, iteration_number)
     bundle_dictionary = {}
     bundle_dictionary['states'] = self.states
-    bundle_dictionary['training_steps'] = self.training_steps_list
+    bundle_dictionary['training_steps_list'] = self.training_steps_list
     return bundle_dictionary
 
   def unbundle(self, checkpoint_dir, iteration_number, bundle_dictionary):
