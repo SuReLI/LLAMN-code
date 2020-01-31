@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import functools
 from multiprocessing import Process, Lock
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
@@ -108,7 +109,6 @@ class MasterRunner:
 
   def run_expert(self, base_dir, llamn_path, game):
     expert = ExpertRunner(base_dir,
-                          create_agent_fn=create_expert,
                           environment=game,
                           llamn_path=llamn_path)
 
@@ -191,15 +191,16 @@ class ExpertRunner(TrainRunner):
 
   def __init__(self,
                base_dir,
-               create_agent_fn,
                environment,
+               create_agent_fn=create_expert,
                llamn_path=None):
 
     name = f'expert_{environment.name}'
     base_dir = os.path.join(base_dir, name)
 
-    def create_expert_fn(*args, **kwargs):
-      return create_agent_fn(*args, **kwargs, llamn_path=llamn_path, name=name)
+    create_expert_fn = functools.partial(create_agent_fn,
+                                         llamn_path=llamn_path,
+                                         name=name)
 
     tf.reset_default_graph()
     super().__init__(base_dir, create_expert_fn, environment.create)
@@ -227,6 +228,7 @@ class LLAMNRunner(TrainRunner):
                num_actions,
                expert_envs,
                expert_paths,
+               create_agent=llamn_agent.AMNAgent,
                checkpoint_file_prefix='ckpt',
                logging_file_prefix='log',
                log_every_n=1,
@@ -257,11 +259,12 @@ class LLAMNRunner(TrainRunner):
     tf.reset_default_graph()
     self._sess = tf.Session('', config=config)
 
-    self._agent = llamn_agent.AMNAgent(
-        self._sess,
-        max_num_actions=num_actions, expert_num_actions=expert_num_actions,
-        llamn_path=llamn_path, expert_paths=expert_paths,
-        summary_writer=self._summary_writer)
+    self._agent = create_agent(self._sess,
+                               max_num_actions=num_actions,
+                               expert_num_actions=expert_num_actions,
+                               llamn_path=llamn_path,
+                               expert_paths=expert_paths,
+                               summary_writer=self._summary_writer)
 
     self._summary_writer.add_graph(graph=tf.get_default_graph())
     self._sess.run(tf.global_variables_initializer())
@@ -279,9 +282,8 @@ class LLAMNRunner(TrainRunner):
     tf.logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
 
-    for i in range(len(self._environments)):
+    for self.ind_env in range(len(self._environments)):
 
-      self.ind_env = i
       self._agent.ind_expert = self.ind_env
 
       print(f'\t\tTraining LLAMN on {self._environment.environment.game}')

@@ -64,7 +64,7 @@ def get_base_dir(resume, ckpt_dir):
         raise FileNotFoundError("No checkpoint found at this path")
       return ckpt_dir
 
-    path = os.path.join(FLAGS.base_dir, '*')
+    path = os.path.join(FLAGS.base_dir, 'AMN_*')
     expe_list = glob.glob(path)
     if not expe_list:
       raise FileNotFoundError("No checkpoint to resume")

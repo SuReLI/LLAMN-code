@@ -76,7 +76,7 @@ class AMNAgent:
     self.feature_size = feature_size
     self.expert_paths = expert_paths
     self.ind_expert = 0
-    self.nb_experts = len(expert_paths)
+    self.nb_experts = len(expert_num_actions)
     self.llamn_path = llamn_path
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
@@ -105,24 +105,35 @@ class AMNAgent:
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
 
-    with tf.device(tf_device):
-      self._build_experts()
-      self._build_prev_llamn()
+    state_shape = (1, *self.observation_shape, stack_size)
+    self.states = [np.zeros(state_shape) for i in range(self.nb_experts)]
 
-      # Create a placeholder for the state input to the AMN network.
-      # The last axis indicates the number of consecutive frames stacked.
-      state_shape = (1, *self.observation_shape, stack_size)
-      self.states = [np.zeros(state_shape) for i in range(self.nb_experts)]
-      self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
-                                     name='state_ph')
-      self._build_replay_buffers()
 
-      self._build_networks()
+    if self.eval_mode:
+      with tf.device(tf_device):
+        self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
+                                       name='state_ph')
+        self._build_replay_buffers()
 
-      self._train_ops = self._build_train_ops()
+        self._build_networks()
 
-    if self.summary_writer is not None:
-      self._merged_summaries = [tf.summary.merge(s) for s in self.summaries]
+    else:
+      with tf.device(tf_device):
+        self._build_experts()
+        self._build_prev_llamn()
+
+        # Create a placeholder for the state input to the AMN network.
+        # The last axis indicates the number of consecutive frames stacked.
+        self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
+                                       name='state_ph')
+        self._build_replay_buffers()
+
+        self._build_networks()
+
+        self._train_ops = self._build_train_ops()
+
+      if self.summary_writer is not None:
+        self._merged_summaries = [tf.summary.merge(s) for s in self.summaries]
 
     self._sess = sess
 
@@ -133,6 +144,10 @@ class AMNAgent:
     self._observation = None
     self._last_observation = None
 
+  @property
+  def num_actions(self):
+    return self.expert_num_actions[self.ind_expert]
+  
   @property
   def state(self):
     return self.states[self.ind_expert]
@@ -220,6 +235,7 @@ class AMNAgent:
 
     net_logits = self.convnet(self.state_ph).logits
 
+    self._net_q_output = []
     self._net_q_argmax = []
     self._net_q_softmax = []
     self._net_features = []
@@ -229,10 +245,12 @@ class AMNAgent:
 
     for i in range(self.nb_experts):
       replay_state = self.replays[i].states
-      expert_mask = [n_action < self.experts[i].num_actions
+      # expert_mask = [n_action < self.experts[i].num_actions
+      expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
       partial_output = tf.boolean_mask(net_logits, expert_mask, axis=1)
+      self._net_q_output.append(partial_output)
       q_argmax = tf.argmax(partial_output, axis=1)[0]
       self._net_q_argmax.append(q_argmax)
 
@@ -242,14 +260,16 @@ class AMNAgent:
       self._net_q_softmax.append(q_softmax)
       self._net_features.append(net_output.features)
 
-      expert_output = self.experts[i](replay_state)
-      expert_q_softmax = tf.nn.softmax(expert_output.q_values, axis=1)
-      self._expert_q_softmax.append(expert_q_softmax)
-      self._expert_features.append(expert_output.features)
+      # Need experts only to compute the loss, no need when testing the policy
+      if not self.eval_mode:
+        expert_output = self.experts[i](replay_state)
+        expert_q_softmax = tf.nn.softmax(expert_output.q_values, axis=1)
+        self._expert_q_softmax.append(expert_q_softmax)
+        self._expert_features.append(expert_output.features)
 
-      if self.llamn_path:
-        llamn_output = self.previous_llamn(replay_state)
-        self._previous_llamn_output.append(llamn_output.features)
+        if self.llamn_path:
+          llamn_output = self.previous_llamn(replay_state)
+          self._previous_llamn_output.append(llamn_output.features)
 
   def _build_xent_loss(self, i_task):
     expert_softmax = self._expert_q_softmax[i_task]
@@ -274,34 +294,45 @@ class AMNAgent:
 
   def _build_train_ops(self):
     train_ops = []
-    self.summaries = [[] for i in range(self.nb_experts)]
 
-    with tf.variable_scope('Losses'):
-      ewc_loss = self._build_ewc_loss()
+    ewc_loss = self._build_ewc_loss()
+    xent_losses = []
+    l2_losses = []
+    total_losses = []
 
-      if self.summary_writer is not None and ewc_loss:
-        ewc_sum = tf.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
-        for list_sum in self.summaries:
-          list_sum.append(ewc_sum)
+    for i_task in range(self.nb_experts):
 
-      for i_task in range(self.nb_experts):
+      xent_loss = self._build_xent_loss(i_task)
+      l2_loss = self._build_l2_loss(i_task)
+      loss = xent_loss + self.feature_weight * l2_loss
 
-        xent_loss = self._build_xent_loss(i_task)
-        l2_loss = self._build_l2_loss(i_task)
-        loss = xent_loss + self.feature_weight * l2_loss
+      if ewc_loss:
+        loss = self.ewc_weight * ewc_loss + (1 - self.ewc_weight) * loss
 
+      xent_losses.append(xent_loss)
+      l2_losses.append(l2_loss)
+      total_losses.append(loss)
+
+      train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
+
+    if self.summary_writer is not None:
+      self.summaries = [[] for i in range(self.nb_experts)]
+
+      with tf.variable_scope('Losses'):
+        # EWC loss summary
         if ewc_loss:
-          loss = self.ewc_weight * ewc_loss + (1 - self.ewc_weight) * loss
+          ewc_sum = tf.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
+          for list_sum in self.summaries:
+            list_sum.append(ewc_sum)
 
-        if self.summary_writer is not None:
+        # Other losses
+        for i_task in range(self.nb_experts):
           game_name = self.expert_paths[i_task].rsplit('_', 1)[1]
           self.summaries[i_task] += [
-              tf.summary.scalar(f'{game_name}/Loss_{i_task}/X_entropy', tf.reduce_mean(xent_loss)),
-              tf.summary.scalar(f'{game_name}/Loss_{i_task}/L2', tf.reduce_mean(l2_loss)),
-              tf.summary.scalar(f'{game_name}/Loss_{i_task}/Total_loss', tf.reduce_mean(loss))
+              tf.summary.scalar(f'{game_name}/X_entropy', tf.reduce_mean(xent_losses[i_task])),
+              tf.summary.scalar(f'{game_name}/L2', tf.reduce_mean(l2_losses[i_task])),
+              tf.summary.scalar(f'{game_name}/Total_loss', tf.reduce_mean(total_losses[i_task]))
           ]
-
-        train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
 
     return train_ops
 
@@ -342,7 +373,7 @@ class AMNAgent:
           self.epsilon_train)
 
     if random.random() < epsilon:
-      return random.randint(0, self.expert_num_actions[self.ind_expert] - 1)
+      return random.randint(0, self.num_actions - 1)
     else:
       return self._sess.run(self.q_argmax, {self.state_ph: self.state})
 

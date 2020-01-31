@@ -1,0 +1,5 @@
+#!/bin/bash
+
+echo Visualizing llamn :
+python -um dopamine.utils.llamn_viz --num_steps=100 --root_dir=results/ "$@"
+

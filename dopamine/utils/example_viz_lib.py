@@ -162,7 +162,8 @@ class MyRunner(run_experiment.Runner):
     q_params = {'x': atari_plot.parameters['width'] // 2,
                 'y': atari_plot.parameters['height'],
                 'legend': action_names}
-    if 'DQN' in self._agent.__class__.__name__:
+    # if 'DQN' in self._agent.__class__.__name__:
+    if hasattr(self._agent, 'get_q_values'):
       q_params['xlabel'] = 'Timestep'
       q_params['ylabel'] = 'Q-Value'
       q_params['title'] = 'Q-Values'

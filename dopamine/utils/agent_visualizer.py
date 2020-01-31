@@ -107,7 +107,7 @@ class AgentVisualizer(object):
       im = Image.fromarray(self.record_frame)
       im.save(os.path.join(self.record_path, filename))
 
-  def generate_video(self, video_file='video.mp4'):
+  def generate_video(self, video_file='../video.mp4'):
     """Generates a video, requires 'png' be in file_types.
 
     Note that this will issue a `subprocess.call` to `ffmpeg`, so only use this
@@ -118,9 +118,11 @@ class AgentVisualizer(object):
     """
     if 'png' not in self.file_types:
       return
+    curr_path = os.getcwd()
     os.chdir(self.record_path)
     file_regex = self.filename_format.replace('{:', '%').replace('}', '')
     file_regex += '.png'
     subprocess.call(['ffmpeg', '-r', '30', '-f', 'image2', '-s', '1920x1080',
                      '-i', file_regex, '-vcodec', 'libx264', '-crf', '25',
                      '-pix_fmt', 'yuv420p', video_file])
+    os.chdir(curr_path)
