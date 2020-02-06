@@ -108,7 +108,6 @@ class AMNAgent:
     state_shape = (1, *self.observation_shape, stack_size)
     self.states = [np.zeros(state_shape) for i in range(self.nb_experts)]
 
-
     if self.eval_mode:
       with tf.device(tf_device):
         self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
@@ -147,7 +146,7 @@ class AMNAgent:
   @property
   def num_actions(self):
     return self.expert_num_actions[self.ind_expert]
-  
+
   @property
   def state(self):
     return self.states[self.ind_expert]
@@ -187,13 +186,13 @@ class AMNAgent:
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
           num_actions, self.num_atoms, self.support,
-          self.feature_size, llamn_name=llamn_name, name=expert_name)
+          self.feature_size, llamn_name=llamn_name, name=expert_name, trainable=False)
       self.experts.append(expert)
 
   def _build_prev_llamn(self):
     if self.llamn_path:
       self.previous_llamn = llamn_atari_lib.AMNNetwork(
-          self.llamn_num_actions, self.feature_size, name='prev_llamn')
+          self.llamn_num_actions, self.feature_size, name='prev_llamn', trainable=False)
 
   def _build_replay_buffers(self):
     self.replays = []
@@ -245,7 +244,6 @@ class AMNAgent:
 
     for i in range(self.nb_experts):
       replay_state = self.replays[i].states
-      # expert_mask = [n_action < self.experts[i].num_actions
       expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
@@ -277,13 +275,13 @@ class AMNAgent:
 
     log_net_softmax = tf.minimum(tf.log(net_softmax + 1e-10), 0.0)
     loss = expert_softmax * log_net_softmax
-    return tf.reduce_mean(-tf.reduce_sum(loss))
+    return -tf.reduce_sum(loss, axis=1)
 
   def _build_l2_loss(self, i_task):
     expert_features = self._expert_features[i_task]
     net_features = self._net_features[i_task]
 
-    loss = tf.nn.l2_loss(expert_features - net_features)
+    loss = tf.reduce_sum(tf.square(expert_features - net_features), axis=1)
     return loss
 
   def _build_ewc_loss(self):

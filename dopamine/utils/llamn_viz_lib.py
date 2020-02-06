@@ -44,7 +44,8 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
 
   def __init__(self, sess, num_actions, llamn_path, name, summary_writer=None):
-    super().__init__(sess, num_actions, llamn_path, name, summary_writer=summary_writer)
+    super().__init__(sess, num_actions, llamn_path, name, eval_mode=True,
+                     summary_writer=summary_writer)
     self.rewards = []
 
   def _load_llamn(self):
@@ -103,11 +104,8 @@ class MyLLAMNAgent(llamn_agent.AMNAgent):
     action = super()._select_action()
     q_vals = self._sess.run(self._net_q_output[self.ind_expert],
                             {self.state_ph: self.state})[0]
-    try:
-      for i in range(len(q_vals)):
-        self.q_values[i].append(q_vals[i])
-    except IndexError:
-      breakpoint()
+    for i in range(len(q_vals)):
+      self.q_values[i].append(q_vals[i])
     return action
 
   def reload_checkpoint(self, checkpoint_path):
