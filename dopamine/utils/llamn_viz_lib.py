@@ -44,8 +44,7 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
 
   def __init__(self, sess, num_actions, llamn_path, name, summary_writer=None):
-    super().__init__(sess, num_actions, llamn_path, name, eval_mode=True,
-                     summary_writer=summary_writer)
+    super().__init__(sess, num_actions, llamn_path, name, summary_writer=summary_writer)
     self.rewards = []
 
   def _load_llamn(self):

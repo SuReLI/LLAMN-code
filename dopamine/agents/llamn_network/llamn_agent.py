@@ -108,28 +108,19 @@ class AMNAgent:
     state_shape = (1, *self.observation_shape, stack_size)
     self.states = [np.zeros(state_shape) for i in range(self.nb_experts)]
 
-    if self.eval_mode:
-      with tf.device(tf_device):
-        self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
-                                       name='state_ph')
-        self._build_replay_buffers()
+    with tf.device(tf_device):
+      self._build_experts()
+      self._build_prev_llamn()
 
-        self._build_networks()
+      # Create a placeholder for the state input to the AMN network.
+      # The last axis indicates the number of consecutive frames stacked.
+      self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
+                                     name='state_ph')
+      self._build_replay_buffers()
 
-    else:
-      with tf.device(tf_device):
-        self._build_experts()
-        self._build_prev_llamn()
+      self._build_networks()
 
-        # Create a placeholder for the state input to the AMN network.
-        # The last axis indicates the number of consecutive frames stacked.
-        self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
-                                       name='state_ph')
-        self._build_replay_buffers()
-
-        self._build_networks()
-
-        self._train_ops = self._build_train_ops()
+      self._train_ops = self._build_train_ops()
 
       if self.summary_writer is not None:
         self._merged_summaries = [tf.summary.merge(s) for s in self.summaries]
@@ -180,23 +171,26 @@ class AMNAgent:
     return self._merged_summaries[self.ind_expert]
 
   def _build_experts(self):
+    if self.eval_mode:
+      return
+
     self.experts = []
     llamn_name = 'llamn' if self.llamn_path else None
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
           num_actions, self.num_atoms, self.support,
-          self.feature_size, llamn_name=llamn_name, name=expert_name, trainable=False)
+          self.feature_size, llamn_name=llamn_name, name=expert_name)
       self.experts.append(expert)
 
   def _build_prev_llamn(self):
-    if self.llamn_path:
+    if not self.eval_mode and self.llamn_path:
       self.previous_llamn = llamn_atari_lib.AMNNetwork(
-          self.llamn_num_actions, self.feature_size, name='prev_llamn', trainable=False)
+          self.llamn_num_actions, self.feature_size, name='prev_llamn')
 
   def _build_replay_buffers(self):
     self.replays = []
-    for i in range(self.nb_experts):
+    for _ in range(self.nb_experts):
       replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
           observation_shape=self.observation_shape,
           stack_size=self.stack_size,
@@ -252,22 +246,22 @@ class AMNAgent:
       q_argmax = tf.argmax(partial_output, axis=1)[0]
       self._net_q_argmax.append(q_argmax)
 
-      net_output = self.convnet(replay_state)
-      partial_output = tf.boolean_mask(net_output.logits, expert_mask, axis=1)
-      q_softmax = tf.nn.softmax(partial_output, axis=1)
-      self._net_q_softmax.append(q_softmax)
-      self._net_features.append(net_output.features)
-
       # Need experts only to compute the loss, no need when testing the policy
       if not self.eval_mode:
+        net_output = self.convnet(replay_state)
+        partial_output = tf.boolean_mask(net_output.logits, expert_mask, axis=1)
+        q_softmax = tf.nn.softmax(partial_output, axis=1)
+        self._net_q_softmax.append(q_softmax)
+        self._net_features.append(net_output.features)
+
         expert_output = self.experts[i](replay_state)
         expert_q_softmax = tf.nn.softmax(expert_output.q_values, axis=1)
-        self._expert_q_softmax.append(expert_q_softmax)
-        self._expert_features.append(expert_output.features)
+        self._expert_q_softmax.append(tf.stop_gradient(expert_q_softmax))
+        self._expert_features.append(tf.stop_gradient(expert_output.features))
 
         if self.llamn_path:
           llamn_output = self.previous_llamn(replay_state)
-          self._previous_llamn_output.append(llamn_output.features)
+          self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
 
   def _build_xent_loss(self, i_task):
     expert_softmax = self._expert_q_softmax[i_task]
@@ -291,6 +285,9 @@ class AMNAgent:
     pass
 
   def _build_train_ops(self):
+    if self.eval_mode:
+      return
+
     train_ops = []
 
     ewc_loss = self._build_ewc_loss()

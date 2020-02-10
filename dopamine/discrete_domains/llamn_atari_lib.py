@@ -41,8 +41,8 @@ class Game:
 class ExpertNetwork(tf.keras.Model):
 
   def __init__(self, num_actions, num_atoms, support,
-               feature_size, llamn_name, name, trainable=True):
-    super().__init__(name=name, trainable=trainable)
+               feature_size, llamn_name, name):
+    super().__init__(name=name)
     activation_fn = tf.keras.activations.relu
     self.num_actions = num_actions
     self.num_atoms = num_atoms
@@ -72,7 +72,7 @@ class ExpertNetwork(tf.keras.Model):
         name='dense_3')
 
     if llamn_name:
-      self.llamn_network = AMNNetwork(num_actions, feature_size, llamn_name, False)
+      self.llamn_network = AMNNetwork(num_actions, feature_size, llamn_name)
     else:
       self.llamn_network = None
 
@@ -108,18 +108,13 @@ class ExpertNetwork(tf.keras.Model):
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
 
-    if not self.trainable:
-        features = tf.stop_gradient(features)
-        logits = tf.stop_gradient(logits)
-        probabilities = tf.stop_gradient(probabilities)
-        q_values = tf.stop_gradient(q_values)
     return ExpertNetworkType(features, q_values, logits, probabilities)
 
 
 class AMNNetwork(tf.keras.Model):
 
-  def __init__(self, num_actions, feature_size, name, trainable=True):
-    super().__init__(name=name, trainable=trainable)
+  def __init__(self, num_actions, feature_size, name):
+    super().__init__(name=name)
     activation_fn = tf.keras.activations.relu
 
     self.kernel_initializer = tf.keras.initializers.VarianceScaling(
@@ -157,8 +152,4 @@ class AMNNetwork(tf.keras.Model):
     logits = self.dense_output(output)
     features = self.dense_features(output)
 
-    if not self.trainable:
-        features = tf.stop_gradient(features)
-        logits = tf.stop_gradient(logits)
-        output = tf.stop_gradient(output)
     return AMNNetworkType(output, logits, features)
