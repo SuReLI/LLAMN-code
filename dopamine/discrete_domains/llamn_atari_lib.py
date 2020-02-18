@@ -18,9 +18,42 @@ AMNNetworkType = collections.namedtuple(
     'amn_network', ['output', 'logits', 'features'])
 
 
+def build_variant(variant):
+  if variant == 0:        # No variant
+      return lambda image: image
+  elif variant == 1:      # VFlip
+      return lambda image: np.flip(image, 0)
+  elif variant == 2:      # HFlip
+      return lambda image: np.flip(image, 1)
+  elif variant == 3:      # VHFlip
+      return lambda image: np.flip(image, (0, 1))
+  elif variant == 4:      # Noisy
+      noise = np.random.normal(0, 3, (84, 84, 1)).astype(np.uint8)
+      return lambda image: image + noise
+  elif variant == 5:      # Negative
+      return lambda image: (255 - image)
+
+
+class ModifiedAtariPreprocessing(AtariPreprocessing):
+  def __init__(self, environment, variant):
+    self.process_variant = build_variant(variant)
+    super().__init__(environment)
+
+  def _pool_and_resize(self):
+    image = super()._pool_and_resize()
+    return self.process_variant(image)
+
+
 class Game:
+  variants = ('VFlip', 'HFlip', 'VHFlip', 'Noisy', 'Negative')
 
   def __init__(self, game_name, sticky_actions=True):
+    self.variant = 0
+    for index, variant in enumerate(self.variants):
+        if game_name.endswith(variant):
+            game_name = game_name[:-len(variant)]
+            self.variant = index + 1
+
     self.name = game_name
     self.version = 'v0' if sticky_actions else 'v4'
 
@@ -32,7 +65,8 @@ class Game:
     self.finished = False     # used for multiprocessing
 
   def create(self):
-    return AtariPreprocessing(gym.make(self.full_name).env)
+    return ModifiedAtariPreprocessing(gym.make(self.full_name).env,
+                                      self.variant)
 
   def __repr__(self):
     return self.name
