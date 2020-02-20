@@ -45,19 +45,22 @@ class ModifiedAtariPreprocessing(AtariPreprocessing):
 
 
 class Game:
-  variants = ('VFlip', 'HFlip', 'VHFlip', 'Noisy', 'Negative')
+  variants = ('VHFlip', 'VFlip', 'HFlip', 'Noisy', 'Negative')
 
   def __init__(self, game_name, sticky_actions=True):
     self.variant = 0
     for index, variant in enumerate(self.variants):
         if game_name.endswith(variant):
-            game_name = game_name[:-len(variant)]
+            gym_name = game_name[:-len(variant)]
             self.variant = index + 1
+            break
+    else:
+      gym_name = game_name
 
     self.name = game_name
     self.version = 'v0' if sticky_actions else 'v4'
 
-    self.full_name = f'{self.name}NoFrameskip-{self.version}'
+    self.full_name = f'{gym_name}NoFrameskip-{self.version}'
 
     env = gym.make(self.full_name)
     self.num_actions = env.action_space.n

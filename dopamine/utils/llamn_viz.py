@@ -74,11 +74,14 @@ def get_config(root_dir):
 
   feature_size_line = None
   games_line = None
-  for line in config:
+  for index, line in enumerate(config):
     if line.startswith('feature_size = '):
       feature_size_line = line
     if line.startswith('MasterRunner.games_names = '):
       games_line = line
+      while config[index].endswith('\\'):
+        index += 1
+        games_line += config[index]
 
   if feature_size_line is None or games_line is None:
     raise ValueError("Feature size or game list not found in saved config file")
@@ -88,7 +91,8 @@ def get_config(root_dir):
   WrappedReplayBuffer.replay_capacity = 300
   """
 
-  games_names = ast.literal_eval(games_line.split(" = ")[1])
+  games_line = games_line[games_line.index('['):]
+  games_names = ast.literal_eval(games_line)
   games = [[Game(game_name) for game_name in list_names]
            for list_names in games_names]
 
