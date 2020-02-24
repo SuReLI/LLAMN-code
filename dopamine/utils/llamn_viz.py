@@ -79,9 +79,9 @@ def get_config(root_dir):
       feature_size_line = line
     if line.startswith('MasterRunner.games_names = '):
       games_line = line
-      while config[index].endswith('\\'):
+      while not config[index+1][0].isalnum():
+        games_line += config[index+1]
         index += 1
-        games_line += config[index]
 
   if feature_size_line is None or games_line is None:
     raise ValueError("Feature size or game list not found in saved config file")

@@ -35,6 +35,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
+import gin
+
 from dopamine.discrete_domains import run_experiment
 from dopamine.discrete_domains import llamn_run_experiment
 
@@ -84,10 +86,15 @@ def main(unused_argv):
     unused_argv: Arguments (unused).
   """
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-  run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
-
   base_dir = get_base_dir(FLAGS.resume, FLAGS.ckpt_dir)
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
+
+  if FLAGS.resume:
+    gin.parse_config_file(os.path.join(base_dir, 'config.gin'))
+
+  else:
+    run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
+
   runner = llamn_run_experiment.MasterRunner(base_dir, not FLAGS.no_parallel)
   runner.run_experiment()
   print()
