@@ -48,6 +48,8 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
     self.rewards = []
 
   def _load_llamn(self):
+    # Don't load llamn because the weights are saved in the checkpoint and will be loaded
+    # in reload_checkpoint
     pass
 
   def step(self, reward, observation):
@@ -69,7 +71,7 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
 
 
 class MyLLAMNAgent(llamn_agent.AMNAgent):
-  """Sample Expert agent to visualize Q-values and rewards."""
+  """Sample LLAMN agent to visualize Q-values and rewards."""
 
   def __init__(self, sess,
                max_num_actions,
@@ -141,7 +143,7 @@ class MyLLAMNRunner(LLAMNRunner):
 
       self._agent.ind_expert = self.ind_env
 
-      game_name = self._names[self.ind_env]
+      game_name = self._name
       game_record_path = os.path.join(record_path, game_name, "images")
       MyRunner.visualize(self, game_record_path, num_global_steps)
 
@@ -154,14 +156,16 @@ def create_expert(sess, environment, llamn_path, name, summary_writer=None):
 def run(agent, nb_day, games, nb_actions, num_steps, root_dir, config):
   """Main entrypoint for running and generating visualizations."""
 
-  phase = 'day_' if agent == 'expert' else 'night_'
-  phase_dir = os.path.join(root_dir, phase+str(nb_day))
+  phase = ('day_' if agent == 'expert' else 'night_') + str(nb_day)
+  phase_dir = os.path.join(root_dir, phase)
 
-  base_dir = os.path.join(root_dir, 'agent_viz', phase+str(nb_day))
+  base_dir = os.path.join(root_dir, 'agent_viz', phase)
   gin.parse_config(config)
 
   if agent == 'expert':
     for game in games:
+      # llamn_path must be non-False if it's not the first day, but don't need to be
+      # exact because we load from a checkpoint, not from a previous llamn network
       runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
       image_dir = os.path.join(base_dir, f"{agent}_{game.name}", "images")
       runner.visualize(image_dir, num_global_steps=num_steps)

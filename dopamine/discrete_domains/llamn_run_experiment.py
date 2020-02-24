@@ -275,6 +275,10 @@ class LLAMNRunner(TrainRunner):
     self._agent.load_networks()
 
   @property
+  def _name(self):
+    return self._names[self.ind_env]
+
+  @property
   def _environment(self):
     return self._environments[self.ind_env]
 
@@ -287,7 +291,7 @@ class LLAMNRunner(TrainRunner):
 
       self._agent.ind_expert = self.ind_env
 
-      print(f'\t\tTraining LLAMN on {self._environment.environment.game}')
+      print(f'\t\tTraining LLAMN on {self._name}')
       num_episodes_train, average_reward_train = self._run_train_phase(
           statistics)
 

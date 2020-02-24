@@ -203,7 +203,8 @@ class MyRunner(run_experiment.Runner):
         else:
           action = self._agent.step(reward, observation)
       self._end_episode(reward)
-    visualizer.generate_video()
+    video_path = os.path.join('..', '_'.join(record_path.split('/')[-3:-1]) + '.mp4')
+    visualizer.generate_video(video_path)
 
 
 def create_dqn_agent(sess, environment, summary_writer=None):

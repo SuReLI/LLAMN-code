@@ -19,23 +19,25 @@ AMNNetworkType = collections.namedtuple(
 
 
 def build_variant(variant):
-  if variant == 0:        # No variant
+  if variant is None:        # No variant
       return lambda image: image
-  elif variant == 1:      # VFlip
-      return lambda image: np.flip(image, 0)
-  elif variant == 2:      # HFlip
-      return lambda image: np.flip(image, 1)
-  elif variant == 3:      # VHFlip
+  elif variant == "VHFlip":
       return lambda image: np.flip(image, (0, 1))
-  elif variant == 4:      # Noisy
+  elif variant == "VFlip":
+      return lambda image: np.flip(image, 0)
+  elif variant == "HFlip":
+      return lambda image: np.flip(image, 1)
+  elif variant == "Noisy":
       noise = np.random.normal(0, 3, (84, 84, 1)).astype(np.uint8)
       return lambda image: image + noise
-  elif variant == 5:      # Negative
+  elif variant == "Negative":
       return lambda image: (255 - image)
+  raise ValueError("Variant name invalid !")
 
 
 class ModifiedAtariPreprocessing(AtariPreprocessing):
   def __init__(self, environment, variant):
+    self.variant = variant
     self.process_variant = build_variant(variant)
     super().__init__(environment)
 
@@ -48,11 +50,11 @@ class Game:
   variants = ('VHFlip', 'VFlip', 'HFlip', 'Noisy', 'Negative')
 
   def __init__(self, game_name, sticky_actions=True):
-    self.variant = 0
-    for index, variant in enumerate(self.variants):
+    self.variant = None
+    for variant in self.variants:
         if game_name.endswith(variant):
             gym_name = game_name[:-len(variant)]
-            self.variant = index + 1
+            self.variant = variant
             break
     else:
       gym_name = game_name

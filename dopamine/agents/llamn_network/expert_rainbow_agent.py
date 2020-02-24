@@ -110,7 +110,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
   def _load_llamn(self):
     if self.llamn_path:
       # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
-      #  from variables with names 'llamn/conv_1'
+      # from variables with names 'llamn/conv_1'
       var_names = {var.name.split('/', 2)[2][:-2]: var
                    for var in self.online_convnet.variables
                    if 'llamn' in var.name}
