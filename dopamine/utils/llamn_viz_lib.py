@@ -141,7 +141,7 @@ class MyLLAMNRunner(LLAMNRunner):
 
       self._agent.ind_expert = self.ind_env
 
-      game_name = self._environment.environment.game.capitalize()
+      game_name = self._names[self.ind_env]
       game_record_path = os.path.join(record_path, game_name, "images")
       MyRunner.visualize(self, game_record_path, num_global_steps)
 
@@ -167,6 +167,5 @@ def run(agent, nb_day, games, nb_actions, num_steps, root_dir, config):
       runner.visualize(image_dir, num_global_steps=num_steps)
 
   else:
-    envs = [game.create() for game in games]
-    runner = MyLLAMNRunner(phase_dir, nb_actions, envs, [], MyLLAMNAgent)
+    runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)
     runner.visualize(base_dir, num_global_steps=num_steps)

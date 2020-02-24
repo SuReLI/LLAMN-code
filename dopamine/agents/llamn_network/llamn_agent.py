@@ -101,7 +101,7 @@ class AMNAgent:
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
     self.optimizer = optimizer
-    self.summary_writer = summary_writer
+    self.summary_writer = summary_writer if not self.eval_mode else None
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
 

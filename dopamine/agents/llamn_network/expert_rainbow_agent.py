@@ -109,8 +109,8 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
   def _load_llamn(self):
     if self.llamn_path:
-      # Restore llamn variables whose name looks like
-      # 'expert_pong/online/llamn/conv_1:0' from variable with name 'llamn/conv_1'
+      # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
+      #  from variables with names 'llamn/conv_1'
       var_names = {var.name.split('/', 2)[2][:-2]: var
                    for var in self.online_convnet.variables
                    if 'llamn' in var.name}
@@ -120,6 +120,8 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
       saver = tf.train.Saver(var_list=var_names)
       saver.restore(self._sess, ckpt_path)
+
+      self._sess.run(self._sync_qt_ops)
 
   def _create_network(self, name):
     """Builds a convolutional network that outputs Q-value distributions.

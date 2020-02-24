@@ -118,10 +118,10 @@ class MasterRunner:
     expert.run_experiment()
     self._write_sentinel(game.name)
 
-  def run_llamn(self, base_dir, envs, paths):
+  def run_llamn(self, base_dir, games, paths):
     llamn = LLAMNRunner(base_dir,
                         num_actions=self.max_num_actions,
-                        expert_envs=envs,
+                        expert_games=games,
                         expert_paths=paths)
 
     print(f"\tRunning llamn {self.curr_day}")
@@ -163,11 +163,11 @@ class MasterRunner:
 
       # Run LLAMN
       last_experts_paths = []
-      last_experts_envs = []
+      last_experts_games = []
       for game in self.games[self.curr_day]:
         path = os.path.join(self.base_dir, f"day_{self.curr_day}/expert_{game.name}")
         last_experts_paths.append(path)
-        last_experts_envs.append(game.create())
+        last_experts_games.append(game)
 
       print(f"Running night {self.curr_day}")
       print(f"\tCreating llamn {self.curr_day}")
@@ -175,13 +175,13 @@ class MasterRunner:
 
       if self.parallel:
         llamn_proc = Process(target=self.run_llamn,
-                             args=(base_dir, last_experts_envs, last_experts_paths))
+                             args=(base_dir, last_experts_games, last_experts_paths))
 
         llamn_proc.start()
         llamn_proc.join()
 
       else:
-        self.run_llamn(base_dir, last_experts_envs, last_experts_paths)
+        self.run_llamn(base_dir, last_experts_games, last_experts_paths)
 
       self.curr_day += 1
       self._write_sentinel()
@@ -226,7 +226,7 @@ class LLAMNRunner(TrainRunner):
   def __init__(self,
                base_dir,
                num_actions,
-               expert_envs,
+               expert_games,
                expert_paths,
                create_agent=llamn_agent.AMNAgent,
                checkpoint_file_prefix='ckpt',
@@ -252,8 +252,9 @@ class LLAMNRunner(TrainRunner):
       llamn_path = None
 
     self.ind_env = 0
-    self._environments = expert_envs
-    expert_num_actions = [env.action_space.n for env in expert_envs]
+    self._names = [game.name for game in expert_games]
+    self._environments = [game.create() for game in expert_games]
+    expert_num_actions = [env.action_space.n for env in self._environments]
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     tf.reset_default_graph()
