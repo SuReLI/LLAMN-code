@@ -19,6 +19,8 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import time
+import sys
 import functools
 from multiprocessing import Process, Lock
 
@@ -282,32 +284,71 @@ class LLAMNRunner(TrainRunner):
   def _environment(self):
     return self._environments[self.ind_env]
 
-  def _run_one_iteration(self, iteration):
-    statistics = iteration_statistics.IterationStatistics()
-    tf.logging.info('Starting iteration %d', iteration)
-    print(f'\n\tLLAMN Running iteration {iteration}')
+  def _run_one_phase(self, min_steps, statistics, run_mode_str):
+    step_count = [0] * len(self._environments)
+    num_episodes = [0] * len(self._environments)
+    sum_returns = [0.] * len(self._environments)
 
-    for self.ind_env in range(len(self._environments)):
-
+    # Continue to run every environment while at least one didn't finish its steps
+    while min(step_count) < min_steps:
       self._agent.ind_expert = self.ind_env
 
-      print(f'\t\tTraining LLAMN on {self._name}')
-      num_episodes_train, average_reward_train = self._run_train_phase(
-          statistics)
+      episode_length, episode_return = self._run_one_episode()
+      statistics.append({
+          '{}_{}_episode_lengths'.format(self._name, run_mode_str): episode_length,
+          '{}_{}_episode_returns'.format(self._name, run_mode_str): episode_return
+      })
+      step_count[self.ind_env] += episode_length
+      sum_returns[self.ind_env] += episode_return
+      num_episodes[self.ind_env] += 1
+      # We use sys.stdout.write instead of tf.logging so as to flush frequently
+      # without generating a line break.
+      sys.stdout.write('\t\tSteps executed on {}: {} '.format(self._name, step_count[self.ind_env]) +
+                       'Episode length: {} '.format(episode_length) +
+                       'Return: {}\r'.format(episode_return))
+      sys.stdout.flush()
 
-      self._save_tensorboard_summaries(iteration, num_episodes_train,
-                                       average_reward_train)
-    return statistics.data_lists
+      self.ind_env = (self.ind_env + 1) % len(self._environments)
+
+    return step_count, sum_returns, num_episodes
+
+  def _run_train_phase(self, statistics):
+    # Perform the training phase, during which the agent learns.
+    self._agent.eval_mode = False
+    start_time = time.time()
+    number_steps, sum_returns, num_episodes = self._run_one_phase(
+        self._training_steps, statistics, 'train')
+
+    average_returns = [0] * len(self._environments)
+    for i in range(len(self._environments)):
+      average_returns[i] = sum_returns[i] / num_episodes[i] if num_episodes[i] > 0 else 0.0
+      statistics.append({'{}_train_average_return'.format(self._names[i]): average_returns})
+    total_average = sum(average_returns) / len(average_returns)
+
+    time_delta = time.time() - start_time
+    tf.logging.info('Average undiscounted return per training episode: %.2f',
+                    total_average)
+    tf.logging.info('Average training steps per second: %.2f',
+                    sum(number_steps) / time_delta)
+    return num_episodes, average_returns
+
+  def _run_one_iteration(self, iteration):
+    tf.logging.info('Starting iteration %d', iteration)
+    print(f'\n\tLLAMN Running iteration {iteration}')
+    super()._run_one_iteration(iteration)
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward):
     """Save statistics as tensorboard summaries."""
-    game_name = self._environment.environment.game.capitalize()
-    summary = tf.Summary(value=[
-        tf.Summary.Value(
-            tag=f'Train/{game_name}/NumEpisodes', simple_value=num_episodes),
-        tf.Summary.Value(
-            tag=f'Train/{game_name}/AverageReturns', simple_value=average_reward),
-    ])
-    self._summary_writer.add_summary(summary, iteration)
+    for i in range(len(num_episodes)):
+
+      game_name = self._environments[i].environment.game.capitalize()
+      summary = tf.Summary(value=[
+          tf.Summary.Value(
+              tag=f'Train/{game_name}/NumEpisodes', simple_value=num_episodes[i]),
+          tf.Summary.Value(
+              tag=f'Train/{game_name}/AverageReturns', simple_value=average_reward[i]),
+      ])
+      self._summary_writer.add_summary(summary, iteration)
+
     self._summary_writer.flush()

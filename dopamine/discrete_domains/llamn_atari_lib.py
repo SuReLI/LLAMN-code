@@ -129,18 +129,7 @@ class ExpertNetwork(tf.keras.Model):
       llamn_output = self.llamn_network(state).output
       llamn_output = tf.stop_gradient(llamn_output)
       x = tf.concat([llamn_output, x], axis=1)
-      # ################################################################ #
-      #                               TODO                               #
-      # ---------------------------------------------------------------- #
-      # + Check if stop_grad is working and llamn_network is not updated #
-      # ################################################################ #
-      # print("llamn_output :\n", llamn_output, '\n\n', '-'*200, '\n')        # debug
-      # print("x :\n", x, '\n\n', '-'*200, '\n')        # debug
 
-    # print("self.llamn_network :\n", self.llamn_network, '\n\n', '-'*200, '\n')    # debug
-    # print("x :\n", x, '\n\n', '-'*200, '\n')    # debug
-    # print("features :\n", features, '\n\n', '-'*200, '\n')    # debug
-    # print()        # debug
     features = self.dense2(x)
     output = self.dense3(features)
     logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
