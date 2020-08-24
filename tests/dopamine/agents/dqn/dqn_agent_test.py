@@ -94,14 +94,14 @@ class DQNAgentTest(tf.test.TestCase):
     # This ensures non-random action choices (since epsilon_eval = 0.0) and
     # skips the train_step.
     agent.eval_mode = True
-    sess.run(tf.global_variables_initializer())
+    sess.run(tf.compat.v1.global_variables_initializer())
     return agent
 
   def testCreateAgentWithDefaults(self):
     # Verifies that we can create and train an agent with the default values.
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = dqn_agent.DQNAgent(sess, num_actions=4)
-      sess.run(tf.global_variables_initializer())
+      sess.run(tf.compat.v1.global_variables_initializer())
       observation = np.ones([84, 84, 1])
       agent.begin_episode(observation)
       agent.step(reward=1, observation=observation)
@@ -112,7 +112,7 @@ class DQNAgentTest(tf.test.TestCase):
 
     Specifically, the action returned and its effect on state.
     """
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       # We fill up the state with 9s. On calling agent.begin_episode the state
       # should be reset to all 0s.
@@ -148,14 +148,14 @@ class DQNAgentTest(tf.test.TestCase):
 
     Specifically, the action returned, and confirm no training is happening.
     """
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       base_observation = np.ones(self.observation_shape + (1,))
       # This will reset state and choose a first action.
       agent.begin_episode(base_observation)
       # We mock the replay buffer to verify how the agent interacts with it.
       agent._replay = test_utils.MockReplayBuffer()
-      self.evaluate(tf.global_variables_initializer())
+      self.evaluate(tf.compat.v1.global_variables_initializer())
 
       expected_state = self.zero_state
       num_steps = 10
@@ -183,13 +183,13 @@ class DQNAgentTest(tf.test.TestCase):
 
     Specifically, the action returned, and confirm training is happening.
     """
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       agent.eval_mode = False
       base_observation = np.ones(self.observation_shape + (1,))
       # We mock the replay buffer to verify how the agent interacts with it.
       agent._replay = test_utils.MockReplayBuffer()
-      self.evaluate(tf.global_variables_initializer())
+      self.evaluate(tf.compat.v1.global_variables_initializer())
       # This will reset state and choose a first action.
       agent.begin_episode(base_observation)
       observation = base_observation
@@ -232,7 +232,7 @@ class DQNAgentTest(tf.test.TestCase):
   def testNonTupleObservationShape(self):
     with self.assertRaises(AssertionError):
       self.observation_shape = 84
-      with tf.Session() as sess:
+      with tf.compat.v1.Session() as sess:
         _ = self._create_test_agent(sess)
 
   def _testCustomShapes(self, shape, dtype, stack_size):
@@ -240,13 +240,13 @@ class DQNAgentTest(tf.test.TestCase):
     self.observation_dtype = dtype
     self.stack_size = stack_size
     self.zero_state = np.zeros((1,) + shape + (stack_size,))
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       agent.eval_mode = False
       base_observation = np.ones(self.observation_shape + (1,))
       # We mock the replay buffer to verify how the agent interacts with it.
       agent._replay = test_utils.MockReplayBuffer()
-      self.evaluate(tf.global_variables_initializer())
+      self.evaluate(tf.compat.v1.global_variables_initializer())
       # This will reset state and choose a first action.
       agent.begin_episode(base_observation)
       observation = base_observation
@@ -318,12 +318,12 @@ class DQNAgentTest(tf.test.TestCase):
                       expected_epsilon, 0.01)
 
   def testBundlingWithNonexistentDirectory(self):
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
-      self.assertEqual(None, agent.bundle_and_checkpoint('/does/not/exist', 1))
+      self.assertIsNone(agent.bundle_and_checkpoint('/does/not/exist', 1))
 
   def testUnbundlingWithFailingReplayBuffer(self):
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       bundle = {}
       # The ReplayBuffer will throw an exception since it is not able to load
@@ -332,13 +332,13 @@ class DQNAgentTest(tf.test.TestCase):
       self.assertFalse(agent.unbundle(self._test_subdir, 1729, bundle))
 
   def testUnbundlingWithNoBundleDictionary(self):
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       agent._replay = mock.Mock()
       self.assertFalse(agent.unbundle(self._test_subdir, 1729, None))
 
   def testPartialUnbundling(self):
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess, allow_partial_reload=True)
       # These values don't reflect the actual types of these attributes, but are
       # used merely for facility of testing.
@@ -351,7 +351,7 @@ class DQNAgentTest(tf.test.TestCase):
       self.assertTrue(agent.unbundle(self._test_subdir, 1729, None))
 
   def testBundling(self):
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
       agent = self._create_test_agent(sess)
       # These values don't reflect the actual types of these attributes, but are
       # used merely for facility of testing.
@@ -369,6 +369,38 @@ class DQNAgentTest(tf.test.TestCase):
       for key in keys:
         self.assertEqual(key, agent.__dict__[key])
 
+  def testSyncOpWithNameScopes(self):
+    num_agents = 5
+    with tf.compat.v1.Session() as sess:
+      agents = []
+      for i in range(num_agents):
+        with tf.name_scope('agent_{}'.format(i)):
+          agents.append(self._create_test_agent(sess))
+
+      # Checks that the agents have two ops each.
+      ops = []
+      for agent in agents:
+        self.assertLen(agent._sync_qt_ops, 2)
+        ops.extend(agent._sync_qt_ops)
+
+      # Assigns the bias of the first agent to 0.
+      ops.append(agents[0].online_convnet.layer.bias.assign(tf.zeros(4)))
+      # Runs twice to make sure zeros are propagated to online and target.
+      sess.run(ops)
+      sess.run(ops)
+
+      biases_0 = sess.run([
+          agents[0].target_convnet.layer.bias,
+          agents[0].online_convnet.layer.bias])
+      self.assertAllEqual(biases_0[0], tf.zeros(4))
+      self.assertAllEqual(biases_0[1], biases_0[0])
+
+      # Checks that other agents have not been affected.
+      biases = sess.run([agt.target_convnet.layer.bias for agt in agents[1:]])
+      for bias in biases:
+        self.assertNotAllEqual(bias, biases_0[0])
+
 
 if __name__ == '__main__':
+  tf.compat.v1.disable_v2_behavior()
   tf.test.main()

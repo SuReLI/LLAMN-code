@@ -30,7 +30,7 @@ Initializes the agent and constructs the components of its graph.
 
 #### Args:
 
-*   <b>`sess`</b>: `tf.Session`, for executing ops.
+*   <b>`sess`</b>: `tf.compat.v1.Session`, for executing ops.
 *   <b>`num_actions`</b>: int, number of actions the agent can take at any
     state.
 *   <b>`observation_shape`</b>: tuple of ints or an int. If single int, the
@@ -66,7 +66,7 @@ Initializes the agent and constructs the components of its graph.
     executed.
 *   <b>`use_staging`</b>: bool, when True use a staging area to prefetch the
     next training batch, speeding training up by about 30%.
-*   <b>`optimizer`</b>: `tf.train.Optimizer`, for training the value function.
+*   <b>`optimizer`</b>: `tf.compat.v1.train.Optimizer`, for training the value function.
 *   <b>`summary_writer`</b>: SummaryWriter object for outputting training
     statistics. Summary writing disabled if set to None.
 *   <b>`summary_writing_frequency`</b>: int, frequency with which summaries will

@@ -30,6 +30,7 @@ import math
 import os
 import pickle
 
+from absl import logging
 import numpy as np
 import tensorflow as tf
 
@@ -77,6 +78,7 @@ def invalid_range(cursor, replay_capacity, stack_size, update_horizon):
        for i in range(stack_size + update_horizon)])
 
 
+@gin.configurable
 class OutOfGraphReplayBuffer(object):
   """A simple out-of-graph Replay Buffer.
 
@@ -143,17 +145,17 @@ class OutOfGraphReplayBuffer(object):
       raise ValueError('There is not enough capacity to cover '
                        'update_horizon and stack_size.')
 
-    tf.logging.info(
+    logging.info(
         'Creating a %s replay memory with the following parameters:',
         self.__class__.__name__)
-    tf.logging.info('\t observation_shape: %s', str(observation_shape))
-    tf.logging.info('\t observation_dtype: %s', str(observation_dtype))
-    tf.logging.info('\t terminal_dtype: %s', str(terminal_dtype))
-    tf.logging.info('\t stack_size: %d', stack_size)
-    tf.logging.info('\t replay_capacity: %d', replay_capacity)
-    tf.logging.info('\t batch_size: %d', batch_size)
-    tf.logging.info('\t update_horizon: %d', update_horizon)
-    tf.logging.info('\t gamma: %f', gamma)
+    logging.info('\t observation_shape: %s', str(observation_shape))
+    logging.info('\t observation_dtype: %s', str(observation_dtype))
+    logging.info('\t terminal_dtype: %s', str(terminal_dtype))
+    logging.info('\t stack_size: %d', stack_size)
+    logging.info('\t replay_capacity: %d', replay_capacity)
+    logging.info('\t batch_size: %d', batch_size)
+    logging.info('\t update_horizon: %d', update_horizon)
+    logging.info('\t gamma: %f', gamma)
 
     self._action_shape = action_shape
     self._action_dtype = action_dtype
@@ -620,14 +622,14 @@ class OutOfGraphReplayBuffer(object):
       iteration_number: int, iteration_number to use as a suffix in naming
         numpy checkpoint files.
     """
-    if not tf.gfile.Exists(checkpoint_dir):
+    if not tf.io.gfile.exists(checkpoint_dir):
       return
 
     checkpointable_elements = self._return_checkpointable_elements()
 
     for attr in checkpointable_elements:
       filename = self._generate_filename(checkpoint_dir, attr, iteration_number)
-      with tf.gfile.Open(filename, 'wb') as f:
+      with tf.io.gfile.GFile(filename, 'wb') as f:
         with gzip.GzipFile(fileobj=f) as outfile:
           # Checkpoint the np arrays in self._store with np.save instead of
           # pickling the dictionary is critical for file size and performance.
@@ -649,7 +651,7 @@ class OutOfGraphReplayBuffer(object):
         stale_filename = self._generate_filename(checkpoint_dir, attr,
                                                  stale_iteration_number)
         try:
-          tf.gfile.Remove(stale_filename)
+          tf.io.gfile.remove(stale_filename)
         except tf.errors.NotFoundError:
           pass
 
@@ -669,14 +671,14 @@ class OutOfGraphReplayBuffer(object):
     # loading a partially-specified (i.e. corrupted) replay buffer.
     for attr in save_elements:
       filename = self._generate_filename(checkpoint_dir, attr, suffix)
-      if not tf.gfile.Exists(filename):
+      if not tf.io.gfile.exists(filename):
         raise tf.errors.NotFoundError(None, None,
                                       'Missing file: {}'.format(filename))
     # If we've reached this point then we have verified that all expected files
     # are available.
     for attr in save_elements:
       filename = self._generate_filename(checkpoint_dir, attr, suffix)
-      with tf.gfile.Open(filename, 'rb') as f:
+      with tf.io.gfile.GFile(filename, 'rb') as f:
         with gzip.GzipFile(fileobj=f) as infile:
           if attr.startswith(STORE_FILENAME_PREFIX):
             array_name = attr[len(STORE_FILENAME_PREFIX):]
@@ -704,7 +706,7 @@ class WrappedReplayBuffer(object):
   def __init__(self,
                observation_shape,
                stack_size,
-               use_staging=True,
+               use_staging=False,
                replay_capacity=1000000,
                batch_size=32,
                update_horizon=1,
@@ -811,18 +813,16 @@ class WrappedReplayBuffer(object):
       use_staging: bool, when True it would use a staging area to prefetch
         the next sampling batch.
     """
+    if use_staging:
+      logging.warning('use_staging=True is no longer supported')
     with tf.name_scope('sample_replay'):
       with tf.device('/cpu:*'):
         transition_type = self.memory.get_transition_elements()
-        transition_tensors = tf.py_func(
+        transition_tensors = tf.numpy_function(
             self.memory.sample_transition_batch, [],
             [return_entry.type for return_entry in transition_type],
             name='replay_sample_py_func')
         self._set_transition_shape(transition_tensors, transition_type)
-        if use_staging:
-          transition_tensors = self._set_up_staging(transition_tensors)
-          self._set_transition_shape(transition_tensors, transition_type)
-
         # Unpack sample transition into member variables.
         self.unpack_transition(transition_tensors, transition_type)
 
@@ -851,25 +851,8 @@ class WrappedReplayBuffer(object):
       prefetched_transition: tuple of tf.Tensors with shape
         memory.get_transition_elements() that have been previously prefetched.
     """
-    transition_type = self.memory.get_transition_elements()
-
-    # Create the staging area in CPU.
-    prefetch_area = tf.contrib.staging.StagingArea(
-        [shape_with_type.type for shape_with_type in transition_type])
-
-    # Store prefetch op for tests, but keep it private -- users should not be
-    # calling _prefetch_batch.
-    self._prefetch_batch = prefetch_area.put(transition)
-    initial_prefetch = tf.cond(
-        tf.equal(prefetch_area.size(), 0),
-        lambda: prefetch_area.put(transition), tf.no_op)
-
-    # Every time a transition is sampled self.prefetch_batch will be
-    # called. If the staging area is empty, two put ops will be called.
-    with tf.control_dependencies([self._prefetch_batch, initial_prefetch]):
-      prefetched_transition = prefetch_area.get()
-
-    return prefetched_transition
+    del transition  # Unused.
+    raise NotImplementedError
 
   def unpack_transition(self, transition_tensors, transition_type):
     """Unpacks the given transition into member variables.

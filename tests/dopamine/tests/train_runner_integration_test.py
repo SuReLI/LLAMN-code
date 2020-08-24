@@ -18,9 +18,8 @@ import datetime
 import os
 import shutil
 
-
-
 from absl import flags
+from absl import logging
 
 from dopamine.discrete_domains import train
 import tensorflow as tf
@@ -34,6 +33,7 @@ class TrainRunnerIntegrationTest(tf.test.TestCase):
   """
 
   def setUp(self):
+    super(TrainRunnerIntegrationTest, self).setUp()
     FLAGS.base_dir = os.path.join(
         '/tmp/dopamine_tests',
         datetime.datetime.utcnow().strftime('run_%Y_%m_%d_%H_%M_%S'))
@@ -70,8 +70,8 @@ class TrainRunnerIntegrationTest(tf.test.TestCase):
 
   def testIntegrationDqn(self):
     """Test the DQN agent."""
-    tf.logging.info('####### Training the DQN agent #####')
-    tf.logging.info('####### DQN base_dir: {}'.format(FLAGS.base_dir))
+    logging.info('####### Training the DQN agent #####')
+    logging.info('####### DQN base_dir: %s', FLAGS.base_dir)
     self.quickDqnFlags()
     train.main([])
     self.verifyFilesCreated(FLAGS.base_dir)
@@ -79,4 +79,5 @@ class TrainRunnerIntegrationTest(tf.test.TestCase):
 
 
 if __name__ == '__main__':
+  tf.compat.v1.disable_v2_behavior()
   tf.test.main()

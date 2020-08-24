@@ -11,12 +11,13 @@ import pickle
 import numpy as np
 import tensorflow as tf
 
+from absl import logging
 import gin.tf
 
 ReplayElement = (
     collections.namedtuple('shape_type', ['name', 'shape', 'type']))
 
-STORE_FILENAME_PREFIX = '$store$_'
+STORE_FILENAME_PREFIX = '$sleeping_store$_'
 
 CHECKPOINT_DURATION = 4
 
@@ -33,13 +34,13 @@ class SleepingReplayBuffer(object):
 
     assert isinstance(observation_shape, tuple)
 
-    tf.logging.info(
+    logging.info(
         'Creating a %s sleeping memory with the following parameters:',
         self.__class__.__name__)
-    tf.logging.info('\t observation_shape: %s', str(observation_shape))
-    tf.logging.info('\t observation_dtype: %s', str(observation_dtype))
-    tf.logging.info('\t replay_capacity: %d', replay_capacity)
-    tf.logging.info('\t batch_size: %d', batch_size)
+    logging.info('\t observation_shape: %s', str(observation_shape))
+    logging.info('\t observation_dtype: %s', str(observation_dtype))
+    logging.info('\t replay_capacity: %d', replay_capacity)
+    logging.info('\t batch_size: %d', batch_size)
 
     self._observation_shape = observation_shape
     self._feature_shape = feature_shape
@@ -186,14 +187,14 @@ class SleepingReplayBuffer(object):
       iteration_number: int, iteration_number to use as a suffix in naming
         numpy checkpoint files.
     """
-    if not tf.gfile.Exists(checkpoint_dir):
+    if not tf.io.gfile.exists(checkpoint_dir):
       return
 
     checkpointable_elements = self._return_checkpointable_elements()
 
     for attr in checkpointable_elements:
       filename = self._generate_filename(checkpoint_dir, attr, iteration_number)
-      with tf.gfile.Open(filename, 'wb') as f:
+      with tf.io.gfile.Gfile(filename, 'wb') as f:
         with gzip.GzipFile(fileobj=f) as outfile:
           # Checkpoint the np arrays in self._store with np.save instead of
           # pickling the dictionary is critical for file size and performance.
@@ -215,7 +216,7 @@ class SleepingReplayBuffer(object):
         stale_filename = self._generate_filename(checkpoint_dir, attr,
                                                  stale_iteration_number)
         try:
-          tf.gfile.Remove(stale_filename)
+          tf.io.gfile.remove(stale_filename)
         except tf.errors.NotFoundError:
           pass
 
@@ -235,14 +236,14 @@ class SleepingReplayBuffer(object):
     # loading a partially-specified (i.e. corrupted) replay buffer.
     for attr in save_elements:
       filename = self._generate_filename(checkpoint_dir, attr, suffix)
-      if not tf.gfile.Exists(filename):
+      if not tf.io.gfile.exists(filename):
         raise tf.errors.NotFoundError(None, None,
                                       'Missing file: {}'.format(filename))
     # If we've reached this point then we have verified that all expected files
     # are available.
     for attr in save_elements:
       filename = self._generate_filename(checkpoint_dir, attr, suffix)
-      with tf.gfile.Open(filename, 'rb') as f:
+      with tf.io.gfile.Gfile(filename, 'rb') as f:
         with gzip.GzipFile(fileobj=f) as infile:
           if attr.startswith(STORE_FILENAME_PREFIX):
             array_name = attr[len(STORE_FILENAME_PREFIX):]
@@ -269,7 +270,7 @@ class WrappedSleepingReplayBuffer(object):
   def __init__(self,
                observation_shape,
                feature_shape,
-               use_staging=True,
+               use_staging=False,
                replay_capacity=1000000,
                batch_size=32,
                observation_dtype=np.uint8,

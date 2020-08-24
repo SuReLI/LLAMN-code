@@ -20,6 +20,9 @@ from __future__ import print_function
 
 import os
 import pickle
+
+from absl import logging
+
 import tensorflow as tf
 
 
@@ -40,17 +43,17 @@ class Logger(object):
     self._logging_enabled = True
 
     if not logging_dir:
-      tf.logging.info('Logging directory not specified, will not log.')
+      logging.info('Logging directory not specified, will not log.')
       self._logging_enabled = False
       return
     # Try to create logging directory.
     try:
-      tf.gfile.MakeDirs(logging_dir)
+      tf.io.gfile.makedirs(logging_dir)
     except tf.errors.PermissionDeniedError:
       # If it already exists, ignore exception.
       pass
-    if not tf.gfile.Exists(logging_dir):
-      tf.logging.warning(
+    if not tf.io.gfile.exists(logging_dir):
+      logging.warning(
           'Could not create directory %s, logging will be disabled.',
           logging_dir)
       self._logging_enabled = False
@@ -83,10 +86,10 @@ class Logger(object):
         filename_prefix.
     """
     if not self._logging_enabled:
-      tf.logging.warning('Logging is disabled.')
+      logging.warning('Logging is disabled.')
       return
     log_file = self._generate_filename(filename_prefix, iteration_number)
-    with tf.gfile.GFile(log_file, 'w') as fout:
+    with tf.io.gfile.GFile(log_file, 'w') as fout:
       pickle.dump(self.data, fout, protocol=pickle.HIGHEST_PROTOCOL)
     # After writing a checkpoint file, we garbage collect the log file
     # that is CHECKPOINT_DURATION versions old.
@@ -95,7 +98,7 @@ class Logger(object):
       stale_file = self._generate_filename(filename_prefix,
                                            stale_iteration_number)
       try:
-        tf.gfile.Remove(stale_file)
+        tf.io.gfile.remove(stale_file)
       except tf.errors.NotFoundError:
         # Ignore if file not found.
         pass

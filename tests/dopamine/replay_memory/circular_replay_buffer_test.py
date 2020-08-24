@@ -47,6 +47,7 @@ class CheckpointableClass(object):
 class OutOfGraphReplayBufferTest(tf.test.TestCase):
 
   def setUp(self):
+    super(OutOfGraphReplayBufferTest, self).setUp()
     self._test_subdir = os.path.join('/tmp/dopamine_tests', 'replay')
     shutil.rmtree(self._test_subdir, ignore_errors=True)
     os.makedirs(self._test_subdir)
@@ -514,7 +515,7 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
         continue
       stale_filename = os.path.join(self._test_subdir, '{}_ckpt.{}.gz'.format(
           attr, stale_iteration))
-      self.assertTrue(tf.gfile.Exists(stale_filename))
+      self.assertTrue(tf.io.gfile.exists(stale_filename))
 
     memory.save(self._test_subdir, current_iteration)
     for attr in memory.__dict__:
@@ -522,9 +523,9 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
         continue
       filename = os.path.join(self._test_subdir, '{}_ckpt.{}.gz'.format(
           attr, current_iteration))
-      self.assertTrue(tf.gfile.Exists(filename))
+      self.assertTrue(tf.io.gfile.exists(filename))
       # The stale version file should have been deleted.
-      self.assertFalse(tf.gfile.Exists(stale_filename))
+      self.assertFalse(tf.io.gfile.exists(stale_filename))
 
   def testSaveNonNDArrayAttributes(self):
     """Tests checkpointing an attribute which is not a numpy array."""
@@ -548,7 +549,7 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
         continue
       stale_filename = os.path.join(self._test_subdir, '{}_ckpt.{}.gz'.format(
           attr, stale_iteration))
-      self.assertTrue(tf.gfile.Exists(stale_filename))
+      self.assertTrue(tf.io.gfile.exists(stale_filename))
 
     memory.save(self._test_subdir, current_iteration)
     for attr in memory.__dict__:
@@ -556,9 +557,9 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
         continue
       filename = os.path.join(self._test_subdir, '{}_ckpt.{}.gz'.format(
           attr, current_iteration))
-      self.assertTrue(tf.gfile.Exists(filename))
+      self.assertTrue(tf.io.gfile.exists(filename))
       # The stale version file should have been deleted.
-      self.assertFalse(tf.gfile.Exists(stale_filename))
+      self.assertFalse(tf.io.gfile.exists(stale_filename))
 
   def testLoadFromNonexistentDirectory(self):
     memory = circular_replay_buffer.OutOfGraphReplayBuffer(
@@ -597,7 +598,7 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
     }
     for attr in numpy_arrays:
       filename = os.path.join(self._test_subdir, '{}_ckpt.3.gz'.format(attr))
-      with tf.gfile.Open(filename, 'w') as f:
+      with tf.io.gfile.GFile(filename, 'w') as f:
         with gzip.GzipFile(fileobj=f) as outfile:
           np.save(outfile, numpy_arrays[attr], allow_pickle=False)
     # We are are missing the reward file, so a NotFoundError will be raised.
@@ -635,7 +636,7 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
     }
     for attr in numpy_arrays:
       filename = os.path.join(self._test_subdir, '{}_ckpt.3.gz'.format(attr))
-      with tf.gfile.Open(filename, 'w') as f:
+      with tf.io.gfile.GFile(filename, 'w') as f:
         with gzip.GzipFile(fileobj=f) as outfile:
           np.save(outfile, numpy_arrays[attr], allow_pickle=False)
     memory.load(self._test_subdir, '3')
@@ -650,6 +651,7 @@ class OutOfGraphReplayBufferTest(tf.test.TestCase):
 class WrappedReplayBufferTest(tf.test.TestCase):
 
   def setUp(self):
+    super(WrappedReplayBufferTest, self).setUp()
     self._test_subdir = os.path.join('/tmp/dopamine_tests', 'wrapped_replay')
     shutil.rmtree(self._test_subdir, ignore_errors=True)
     os.makedirs(self._test_subdir)
@@ -742,17 +744,10 @@ class WrappedReplayBufferTest(tf.test.TestCase):
         replay_capacity=100,
         batch_size=BATCH_SIZE,
         use_staging=True)
-    # When staging is on, replay._prefetch_batch tries to prefetch transitions
-    # for efficient sampling. Since no transitions have been added, this raises
-    # an error.
-    with self.assertRaisesOpError(
-        'Cannot sample a batch with fewer than stack size'):
-      self.evaluate(replay._prefetch_batch)
     with self.test_session() as sess:
       for i in range(BATCH_SIZE * 2):
         observation = np.full(OBSERVATION_SHAPE, i, dtype=OBS_DTYPE)
         replay.add(observation, 2, 1, 0)
-      sess.run(replay._prefetch_batch)
     self._verify_sampled_trajectories(sess.run(replay.transition))
 
   def testWrapperSave(self):
@@ -772,7 +767,7 @@ class WrappedReplayBufferTest(tf.test.TestCase):
       if attr.startswith('_'):
         continue
       filename = os.path.join(self._test_subdir, '{}_ckpt.3.gz'.format(attr))
-      self.assertTrue(tf.gfile.Exists(filename))
+      self.assertTrue(tf.io.gfile.exists(filename))
 
   def testWrapperLoad(self):
     replay = circular_replay_buffer.WrappedReplayBuffer(
@@ -798,7 +793,7 @@ class WrappedReplayBufferTest(tf.test.TestCase):
     }
     for attr in numpy_arrays:
       filename = os.path.join(self._test_subdir, '{}_ckpt.3.gz'.format(attr))
-      with tf.gfile.Open(filename, 'w') as f:
+      with tf.io.gfile.GFile(filename, 'w') as f:
         with gzip.GzipFile(fileobj=f) as outfile:
           np.save(outfile, numpy_arrays[attr], allow_pickle=False)
     replay.load(self._test_subdir, '3')
@@ -828,4 +823,5 @@ class WrappedReplayBufferTest(tf.test.TestCase):
 
 
 if __name__ == '__main__':
+  tf.compat.v1.disable_v2_behavior()
   tf.test.main()

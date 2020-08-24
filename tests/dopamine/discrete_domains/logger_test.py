@@ -33,6 +33,7 @@ FLAGS = flags.FLAGS
 class LoggerTest(tf.test.TestCase):
 
   def setUp(self):
+    super(LoggerTest, self).setUp()
     self._test_subdir = os.path.join('/tmp/dopamine_tests', 'logging')
     shutil.rmtree(self._test_subdir, ignore_errors=True)
     os.makedirs(self._test_subdir)
@@ -83,7 +84,7 @@ class LoggerTest(tf.test.TestCase):
     exp_logger.log_to_file('log', iteration_number)
     log_file = os.path.join(self._test_subdir,
                             'log_{}'.format(iteration_number))
-    with tf.gfile.GFile(log_file, 'rb') as f:
+    with tf.io.gfile.GFile(log_file, 'rb') as f:
       contents = f.read()
     self.assertEqual(contents, pickle.dumps(expected_dictionary,
                                             protocol=pickle.HIGHEST_PROTOCOL))
@@ -105,10 +106,11 @@ class LoggerTest(tf.test.TestCase):
       log_file = os.path.join(self._test_subdir,
                               'log_{}'.format(iteration_number))
       if iteration_number < deleted_log_files:
-        self.assertFalse(tf.gfile.Exists(log_file))
+        self.assertFalse(tf.io.gfile.exists(log_file))
       else:
-        self.assertTrue(tf.gfile.Exists(log_file))
+        self.assertTrue(tf.io.gfile.exists(log_file))
 
 
 if __name__ == '__main__':
+  tf.compat.v1.disable_v2_behavior()
   tf.test.main()

@@ -37,6 +37,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
+
 from dopamine.agents.dqn import dqn_agent
 from dopamine.agents.rainbow import rainbow_agent
 from dopamine.discrete_domains import llamn_atari_lib
@@ -72,8 +74,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                epsilon_decay_period=250000,
                replay_scheme='prioritized',
                tf_device='/cpu:*',
-               use_staging=True,
-               optimizer=tf.train.AdamOptimizer(
+               optimizer=tf.compat.v1.train.AdamOptimizer(
                    learning_rate=0.00025, epsilon=0.0003125),
                summary_writer=None,
                summary_writing_frequency=500):
@@ -102,7 +103,6 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
         epsilon_decay_period=epsilon_decay_period,
         replay_scheme=replay_scheme,
         tf_device=tf_device,
-        use_staging=use_staging,
         optimizer=optimizer,
         summary_writer=summary_writer,
         summary_writing_frequency=summary_writing_frequency)
@@ -122,10 +122,10 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                    for var in self.online_convnet.variables
                    if 'dense_3' not in var.name}
 
-      ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
+      ckpt = tf.compat.v1.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
-      saver = tf.train.Saver(var_list=var_names)
+      saver = tf.compat.v1.train.Saver(var_list=var_names)
       saver.restore(self._sess, ckpt_path)
 
       self._sess.run(self._sync_qt_ops)
@@ -152,10 +152,14 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
   def _build_sync_op(self):
     sync_qt_ops = []
-    trainables_online = tf.get_collection(
-        tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/online')
-    trainables_target = tf.get_collection(
-        tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name+'/target')
+    scope = tf.compat.v1.get_default_graph().get_name_scope()
+    trainables_online = tf.compat.v1.get_collection(
+        tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
+        scope=os.path.join(scope, self.name, 'online'))
+    trainables_target = tf.compat.v1.get_collection(
+        tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
+        scope=os.path.join(scope, self.name, 'target'))
+
     assert trainables_online, "No variables found for online network"
     assert trainables_target, "No variables found for online target"
 

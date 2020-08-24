@@ -33,6 +33,7 @@ import tensorflow as tf
 import gin.tf
 
 
+@gin.configurable
 class OutOfGraphPrioritizedReplayBuffer(
     circular_replay_buffer.OutOfGraphReplayBuffer):
   """An out-of-graph Replay Buffer for Prioritized Experience Replay.
@@ -270,7 +271,7 @@ class WrappedPrioritizedReplayBuffer(
   def __init__(self,
                observation_shape,
                stack_size,
-               use_staging=True,
+               use_staging=False,
                replay_capacity=1000000,
                batch_size=32,
                update_horizon=1,
@@ -350,7 +351,7 @@ class WrappedPrioritizedReplayBuffer(
     Returns:
        A tf op setting the priorities for prioritized sampling.
     """
-    return tf.py_func(
+    return tf.numpy_function(
         self.memory.set_priority, [indices, priorities], [],
         name='prioritized_replay_set_priority_py_func')
 
@@ -364,7 +365,7 @@ class WrappedPrioritizedReplayBuffer(
       priorities: tf.Tensor with dtype float and shape [n], the priorities at
         the indices.
     """
-    return tf.py_func(
+    return tf.numpy_function(
         self.memory.get_priority, [indices],
         tf.float32,
         name='prioritized_replay_get_priority_py_func')

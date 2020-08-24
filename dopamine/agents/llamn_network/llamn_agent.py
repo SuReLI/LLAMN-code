@@ -7,6 +7,8 @@ import os
 import math
 import random
 
+from absl import logging
+
 from dopamine.agents.dqn import dqn_agent
 from dopamine.replay_memory import prioritized_replay_buffer
 from dopamine.discrete_domains import atari_lib, llamn_atari_lib
@@ -52,7 +54,7 @@ class AMNAgent:
                tf_device='/cpu:*',
                eval_mode=False,
                max_tf_checkpoints_to_keep=4,
-               optimizer=tf.train.RMSPropOptimizer(
+               optimizer=tf.compat.v1.train.RMSPropOptimizer(
                    learning_rate=0.00025,
                    decay=0.95,
                    momentum=0.0,
@@ -63,12 +65,12 @@ class AMNAgent:
                allow_partial_reload=False):
 
     assert isinstance(observation_shape, tuple)
-    tf.logging.info('Creating %s agent with the following parameters:',
-                    self.__class__.__name__)
-    tf.logging.info('\t tf_device: %s', tf_device)
-    tf.logging.info('\t optimizer: %s', optimizer)
-    tf.logging.info('\t max_tf_checkpoints_to_keep: %d',
-                    max_tf_checkpoints_to_keep)
+    logging.info('Creating %s agent with the following parameters:',
+                 self.__class__.__name__)
+    logging.info('\t tf_device: %s', tf_device)
+    logging.info('\t optimizer: %s', optimizer)
+    logging.info('\t max_tf_checkpoints_to_keep: %d',
+                 max_tf_checkpoints_to_keep)
 
     # LLAMN Initialization
     self.llamn_num_actions = max_num_actions
@@ -114,8 +116,8 @@ class AMNAgent:
 
       # Create a placeholder for the state input to the AMN network.
       # The last axis indicates the number of consecutive frames stacked.
-      self.state_ph = tf.placeholder(self.observation_dtype, state_shape,
-                                     name='state_ph')
+      self.state_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape,
+                                               name='state_ph')
       self._build_replay_buffers()
 
       self._build_networks()
@@ -123,12 +125,13 @@ class AMNAgent:
       self._train_ops = self._build_train_ops()
 
       if self.summary_writer is not None:
-        self._merged_summaries = [tf.summary.merge(s) for s in self.summaries]
+        self._merged_summaries = [tf.compat.v1.summary.merge(s) for s in self.summaries]
 
     self._sess = sess
 
-    var_map = atari_lib.maybe_transform_variable_names(tf.all_variables())
-    self._saver = tf.train.Saver(var_list=var_map,
+    var_map = atari_lib.maybe_transform_variable_names(
+        tf.compat.v1.global_variables())
+    self._saver = tf.compat.v1.train.Saver(var_list=var_map,
                                  max_to_keep=max_tf_checkpoints_to_keep)
 
     self._observation = None
@@ -198,7 +201,6 @@ class AMNAgent:
       replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
           observation_shape=self.observation_shape,
           stack_size=self.stack_size,
-          use_staging=True,
           update_horizon=self.update_horizon,
           gamma=self.gamma,
           observation_dtype=self.observation_dtype.as_numpy_dtype)
@@ -208,19 +210,19 @@ class AMNAgent:
     for i in range(self.nb_experts):
       path, expert = self.expert_paths[i], self.experts[i]
 
-      ckpt = tf.train.get_checkpoint_state(path + "/checkpoints")
+      ckpt = tf.compat.v1.train.get_checkpoint_state(path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
-      saver = tf.train.Saver(var_list=expert.variables)
+      saver = tf.compat.v1.train.Saver(var_list=expert.variables)
       saver.restore(self._sess, ckpt_path)
 
     if self.llamn_path:
-      ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
+      ckpt = tf.compat.v1.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
       var_names = {var.name[5:-2]: var
                    for var in self.previous_llamn.variables}
-      saver = tf.train.Saver(var_list=var_names)
+      saver = tf.compat.v1.train.Saver(var_list=var_names)
       saver.restore(self._sess, ckpt_path)
 
   def _create_network(self):
@@ -271,7 +273,7 @@ class AMNAgent:
     expert_softmax = self._expert_q_softmax[i_task]
     net_softmax = self._net_q_softmax[i_task]
 
-    log_net_softmax = tf.minimum(tf.log(net_softmax + 1e-10), 0.0)
+    log_net_softmax = tf.minimum(tf.math.log(net_softmax + 1e-10), 0.0)
     loss = expert_softmax * log_net_softmax
     return -tf.reduce_sum(loss, axis=1)
 
@@ -317,10 +319,10 @@ class AMNAgent:
     if self.summary_writer is not None:
       self.summaries = [[] for i in range(self.nb_experts)]
 
-      with tf.variable_scope('Losses'):
+      with tf.compat.v1.variable_scope('Losses'):
         # EWC loss summary
         if ewc_loss:
-          ewc_sum = tf.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
+          ewc_sum = tf.compat.v1.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
           for list_sum in self.summaries:
             list_sum.append(ewc_sum)
 
@@ -328,9 +330,9 @@ class AMNAgent:
         for i_task in range(self.nb_experts):
           game_name = self.expert_paths[i_task].rsplit('_', 1)[1]
           self.summaries[i_task] += [
-              tf.summary.scalar(f'{game_name}/X_entropy', tf.reduce_mean(xent_losses[i_task])),
-              tf.summary.scalar(f'{game_name}/L2', tf.reduce_mean(l2_losses[i_task])),
-              tf.summary.scalar(f'{game_name}/Total_loss', tf.reduce_mean(total_losses[i_task]))
+              tf.compat.v1.summary.scalar(f'{game_name}/X_entropy', tf.reduce_mean(xent_losses[i_task])),
+              tf.compat.v1.summary.scalar(f'{game_name}/L2', tf.reduce_mean(l2_losses[i_task])),
+              tf.compat.v1.summary.scalar(f'{game_name}/Total_loss', tf.reduce_mean(total_losses[i_task]))
           ]
 
     return train_ops
@@ -426,7 +428,7 @@ class AMNAgent:
       A dict containing additional Python objects to be checkpointed by the
         experiment. If the checkpoint directory does not exist, returns None.
     """
-    if not tf.gfile.Exists(checkpoint_dir):
+    if not tf.io.gfile.exists(checkpoint_dir):
       return None
     # Call the Tensorflow saver to checkpoint the graph.
     self._saver.save(
@@ -436,7 +438,7 @@ class AMNAgent:
     for i in range(self.nb_experts):
       game_name = self.expert_paths[i].rsplit('_', 1)[1]
       replay_path = os.path.join(checkpoint_dir, f'replay_{game_name}')
-      tf.gfile.MkDir(replay_path)
+      tf.io.gfile.mkdir(replay_path)
       self.replays[i].save(replay_path, iteration_number)
     bundle_dictionary = {}
     bundle_dictionary['states'] = self.states
@@ -472,7 +474,7 @@ class AMNAgent:
       if not self.allow_partial_reload:
         # If we don't allow partial reloads, we will return False.
         return False
-      tf.logging.warning('Unable to reload replay buffer!')
+      logging.warning('Unable to reload replay buffer!')
     if bundle_dictionary is not None:
       for key in self.__dict__:
         if key in bundle_dictionary:
@@ -480,7 +482,7 @@ class AMNAgent:
     elif not self.allow_partial_reload:
       return False
     else:
-      tf.logging.warning("Unable to reload the agent's parameters!")
+      logging.warning("Unable to reload the agent's parameters!")
     # Restore the agent's TensorFlow graph.
     self._saver.restore(self._sess,
                         os.path.join(checkpoint_dir,

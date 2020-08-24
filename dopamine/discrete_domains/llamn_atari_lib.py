@@ -117,7 +117,7 @@ class ExpertNetwork(tf.keras.Model):
 
   def call(self, state):
     state = tf.cast(state, tf.float32)
-    state = tf.div(state, 255.)
+    state = state / 255
 
     x = self.conv1(state)
     x = self.conv2(x)
@@ -171,7 +171,7 @@ class AMNNetwork(tf.keras.Model):
 
   def call(self, state):
     state = tf.cast(state, tf.float32)
-    state = tf.div(state, 255.)
+    state = state / 255
     x = self.conv1(state)
     x = self.conv2(x)
     x = self.conv3(x)

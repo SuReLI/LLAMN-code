@@ -50,11 +50,12 @@ class AgentVisualizerTest(tf.test.TestCase):
     agent_visualizer.save_frame()
 
     frame_filename = os.path.join(self._test_subdir, 'frame_000000.png')
-    self.assertTrue(tf.gfile.Exists(frame_filename))
+    self.assertTrue(tf.io.gfile.exists(frame_filename))
 
     im = Image.open(frame_filename)
     im_arr = np.array(im)
     self.assertTrue(np.array_equal(im_arr, agent_visualizer.record_frame))
 
 if __name__ == '__main__':
+  tf.compat.v1.disable_v2_behavior()
   tf.test.main()

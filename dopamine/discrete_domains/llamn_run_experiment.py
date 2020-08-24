@@ -24,6 +24,8 @@ import sys
 import functools
 from multiprocessing import Process, Lock
 
+from absl import logging
+
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains.llamn_atari_lib import Game
 
@@ -113,7 +115,7 @@ class MasterRunner:
                           environment=game,
                           llamn_path=llamn_path)
 
-    tf.logging.info('Running expert')
+    logging.info('Running expert')
 
     print(f"\tRunning expert {game.name}")
     expert.run_experiment()
@@ -126,13 +128,13 @@ class MasterRunner:
                         expert_paths=paths)
 
     print(f"\tRunning llamn {self.curr_day}")
-    tf.logging.info('Running llamn')
+    logging.info('Running llamn')
     llamn.run_experiment()
     print('\n\n')
 
   def run_experiment(self):
 
-    tf.logging.info('Beginning Master Runner')
+    logging.info('Beginning Master Runner')
     print('Beginning Master Runner')
 
     while self.curr_day < len(self.games):
@@ -203,20 +205,23 @@ class ExpertRunner(TrainRunner):
                                          llamn_path=llamn_path,
                                          name=name)
 
-    tf.reset_default_graph()
+    tf.compat.v1.reset_default_graph()
     super().__init__(base_dir, create_expert_fn, environment.create)
 
     self._agent._load_llamn()
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
-                                  average_reward):
+                                  average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
-    game_name = self._environment.environment.game.capitalize()
-    summary = tf.Summary(value=[
-        tf.Summary.Value(
-            tag=f'Train/{game_name}/NumEpisodes', simple_value=num_episodes),
-        tf.Summary.Value(
-            tag=f'Train/{game_name}/AverageReturns', simple_value=average_reward),
+    env_name = self._environment.environment.game.capitalize()
+    summary = tf.compat.v1.Summary(value=[
+        tf.compat.v1.Summary.Value(
+            tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes),
+        tf.compat.v1.Summary.Value(
+            tag=f'Train/{env_name}/AverageReturns', simple_value=average_reward),
+        tf.compat.v1.Summary.Value(
+            tag=f'Train/{env_name}/AverageStepsPerSecond',
+            simple_value=average_steps_per_second),
     ])
     self._summary_writer.add_summary(summary, iteration)
 
@@ -244,7 +249,7 @@ class LLAMNRunner(TrainRunner):
     self._max_steps_per_episode = max_steps_per_episode
     self._base_dir = base_dir
     self._create_directories()
-    self._summary_writer = tf.summary.FileWriter(self._base_dir)
+    self._summary_writer = tf.compat.v1.summary.FileWriter(self._base_dir)
 
     index = int(base_dir.rsplit('_', 1)[1])
     if index > 0:
@@ -256,10 +261,10 @@ class LLAMNRunner(TrainRunner):
     self._names = [game.name for game in expert_games]
     self._environments = [game.create() for game in expert_games]
     expert_num_actions = [env.action_space.n for env in self._environments]
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
-    tf.reset_default_graph()
-    self._sess = tf.Session('', config=config)
+    tf.compat.v1.reset_default_graph()
+    self._sess = tf.compat.v1.Session('', config=config)
 
     self._agent = create_agent(self._sess,
                                max_num_actions=num_actions,
@@ -268,8 +273,8 @@ class LLAMNRunner(TrainRunner):
                                expert_paths=expert_paths,
                                summary_writer=self._summary_writer)
 
-    self._summary_writer.add_graph(graph=tf.get_default_graph())
-    self._sess.run(tf.global_variables_initializer())
+    self._summary_writer.add_graph(graph=tf.compat.v1.get_default_graph())
+    self._sess.run(tf.compat.v1.global_variables_initializer())
 
     self._initialize_checkpointer_and_maybe_resume(checkpoint_file_prefix)
 
@@ -300,7 +305,7 @@ class LLAMNRunner(TrainRunner):
       step_count[self.ind_env] += episode_length
       sum_returns[self.ind_env] += episode_return
       num_episodes[self.ind_env] += 1
-      # We use sys.stdout.write instead of tf.logging so as to flush frequently
+      # We use sys.stdout.write instead of logging so as to flush frequently
       # without generating a line break.
       sys.stdout.write('\t\tSteps executed on {}: {} '.format(self._name, step_count[self.ind_env]) +
                        'Episode length: {} '.format(episode_length) +
@@ -317,36 +322,45 @@ class LLAMNRunner(TrainRunner):
     start_time = time.time()
     number_steps, sum_returns, num_episodes = self._run_one_phase(
         self._training_steps, statistics, 'train')
+    time_delta = time.time() - start_time
 
     average_returns = [0] * len(self._environments)
+    average_steps_per_second = [0] * len(self._environments)
     for i in range(len(self._environments)):
-      average_returns[i] = sum_returns[i] / num_episodes[i] if num_episodes[i] > 0 else 0.0
-      statistics.append({'{}_train_average_return'.format(self._names[i]): average_returns})
-    total_average = sum(average_returns) / len(average_returns)
+      env_name = self._names[i]
 
-    time_delta = time.time() - start_time
-    tf.logging.info('Average undiscounted return per training episode: %.2f',
-                    total_average)
-    tf.logging.info('Average training steps per second: %.2f',
-                    sum(number_steps) / time_delta)
-    return num_episodes, average_returns
+      average_returns[i] = sum_returns[i] / num_episodes[i] if num_episodes[i] > 0 else 0.0
+      statistics.append({f'{env_name}_train_average_return': average_returns[i]})
+
+      average_steps_per_second[i] = number_steps[i] / time_delta
+      statistics.append({f'{env_name}_train_average_steps_per_second': average_steps_per_second[i]})
+
+    total_average = sum(average_returns) / len(average_returns)
+    logging.info('Average undiscounted return per training episode: %.2f',
+                 total_average)
+    logging.info('Average training steps per second: %.2f',
+                 sum(number_steps) / time_delta)
+    return num_episodes, average_returns, average_steps_per_second
 
   def _run_one_iteration(self, iteration):
-    tf.logging.info('Starting iteration %d', iteration)
+    logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
     return super()._run_one_iteration(iteration)
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
-                                  average_reward):
+                                  average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
     for i in range(len(num_episodes)):
 
-      game_name = self._environments[i].environment.game.capitalize()
-      summary = tf.Summary(value=[
-          tf.Summary.Value(
-              tag=f'Train/{game_name}/NumEpisodes', simple_value=num_episodes[i]),
-          tf.Summary.Value(
-              tag=f'Train/{game_name}/AverageReturns', simple_value=average_reward[i]),
+      env_name = self._environments[i].environment.game.capitalize()
+      summary = tf.compat.v1.Summary(value=[
+          tf.compat.v1.Summary.Value(
+              tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes[i]),
+          tf.compat.v1.Summary.Value(
+              tag=f'Train/{env_name}/AverageReturns', simple_value=average_reward[i]),
+          tf.compat.v1.Summary.Value(
+              tag=f'Train/{env_name}/AverageStepsPerSecond',
+              simple_value=average_steps_per_second[i]),
       ])
       self._summary_writer.add_summary(summary, iteration)
 

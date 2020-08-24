@@ -22,6 +22,8 @@ import os
 import sys
 import time
 
+from absl import logging
+
 from dopamine.agents.dqn import dqn_agent
 from dopamine.agents.implicit_quantile import implicit_quantile_agent
 from dopamine.agents.rainbow import rainbow_agent
@@ -29,6 +31,10 @@ from dopamine.discrete_domains import atari_lib
 from dopamine.discrete_domains import checkpointer
 from dopamine.discrete_domains import iteration_statistics
 from dopamine.discrete_domains import logger
+from dopamine.jax.agents.dqn import dqn_agent as jax_dqn_agent
+from dopamine.jax.agents.implicit_quantile import implicit_quantile_agent as jax_implicit_quantile_agent
+from dopamine.jax.agents.quantile import quantile_agent as jax_quantile_agent
+from dopamine.jax.agents.rainbow import rainbow_agent as jax_rainbow_agent
 
 import numpy as np
 import tensorflow as tf
@@ -56,7 +62,7 @@ def create_agent(sess, environment, agent_name=None, summary_writer=None,
   """Creates an agent.
 
   Args:
-    sess: A `tf.Session` object for running associated ops.
+    sess: A `tf.compat.v1.Session` object for running associated ops.
     environment: A gym environment (e.g. Atari 2600).
     agent_name: str, name of the agent to create.
     summary_writer: A Tensorflow summary writer to pass to the agent
@@ -84,6 +90,21 @@ def create_agent(sess, environment, agent_name=None, summary_writer=None,
   elif agent_name == 'implicit_quantile':
     return implicit_quantile_agent.ImplicitQuantileAgent(
         sess, num_actions=environment.action_space.n,
+        summary_writer=summary_writer)
+  elif agent_name == 'jax_dqn':
+    return jax_dqn_agent.JaxDQNAgent(num_actions=environment.action_space.n,
+                                     summary_writer=summary_writer)
+  elif agent_name == 'jax_quantile':
+    return jax_quantile_agent.JaxQuantileAgent(
+        num_actions=environment.action_space.n,
+        summary_writer=summary_writer)
+  elif agent_name == 'jax_rainbow':
+    return jax_rainbow_agent.JaxRainbowAgent(
+        num_actions=environment.action_space.n,
+        summary_writer=summary_writer)
+  elif agent_name == 'jax_implicit_quantile':
+    return jax_implicit_quantile_agent.JaxImplicitQuantileAgent(
+        num_actions=environment.action_space.n,
         summary_writer=summary_writer)
   else:
     raise ValueError('Unknown agent: {}'.format(agent_name))
@@ -165,13 +186,15 @@ class Runner(object):
 
     This constructor will take the following actions:
     - Initialize an environment.
-    - Initialize a `tf.Session`.
+    - Initialize a `tf.compat.v1.Session`.
     - Initialize a logger.
     - Initialize an agent.
     - Reload from the latest checkpoint, if available, and initialize the
       Checkpointer object.
     """
     assert base_dir is not None
+    tf.compat.v1.disable_v2_behavior()
+
     self._logging_file_prefix = logging_file_prefix
     self._log_every_n = log_every_n
     self._num_iterations = num_iterations
@@ -180,19 +203,19 @@ class Runner(object):
     self._max_steps_per_episode = max_steps_per_episode
     self._base_dir = base_dir
     self._create_directories()
-    self._summary_writer = tf.summary.FileWriter(self._base_dir)
+    self._summary_writer = tf.compat.v1.summary.FileWriter(self._base_dir)
 
     self._environment = create_environment_fn()
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     # Allocate only subset of the GPU memory as needed which allows for running
     # multiple agents/workers on the same GPU.
     config.gpu_options.allow_growth = True
     # Set up a session and initialize variables.
-    self._sess = tf.Session('', config=config)
+    self._sess = tf.compat.v1.Session('', config=config)
     self._agent = create_agent_fn(self._sess, self._environment,
                                   summary_writer=self._summary_writer)
-    self._summary_writer.add_graph(graph=tf.get_default_graph())
-    self._sess.run(tf.global_variables_initializer())
+    self._summary_writer.add_graph(graph=tf.compat.v1.get_default_graph())
+    self._sess.run(tf.compat.v1.global_variables_initializer())
 
     self._initialize_checkpointer_and_maybe_resume(checkpoint_file_prefix)
 
@@ -239,8 +262,8 @@ class Runner(object):
           assert 'current_iteration' in experiment_data
           self._logger.data = experiment_data['logs']
           self._start_iteration = experiment_data['current_iteration'] + 1
-        tf.logging.info('Reloaded checkpoint and will start from iteration %d',
-                        self._start_iteration)
+        logging.info('Reloaded checkpoint and will start from iteration %d',
+                     self._start_iteration)
 
   def _initialize_episode(self):
     """Initialization for a new episode.
@@ -339,7 +362,7 @@ class Runner(object):
       step_count += episode_length
       sum_returns += episode_return
       num_episodes += 1
-      # We use sys.stdout.write instead of tf.logging so as to flush frequently
+      # We use sys.stdout.write instead of logging so as to flush frequently
       # without generating a line break.
       sys.stdout.write('\t\tSteps executed: {} '.format(step_count) +
                        'Episode length: {} '.format(episode_length) +
@@ -357,7 +380,8 @@ class Runner(object):
 
     Returns:
       num_episodes: int, The number of episodes run in this phase.
-      average_reward: The average reward generated in this phase.
+      average_reward: float, The average reward generated in this phase.
+      average_steps_per_second: float, The average number of steps per second.
     """
     # Perform the training phase, during which the agent learns.
     self._agent.eval_mode = False
@@ -367,11 +391,14 @@ class Runner(object):
     average_return = sum_returns / num_episodes if num_episodes > 0 else 0.0
     statistics.append({'train_average_return': average_return})
     time_delta = time.time() - start_time
-    tf.logging.info('Average undiscounted return per training episode: %.2f',
-                    average_return)
-    tf.logging.info('Average training steps per second: %.2f',
-                    number_steps / time_delta)
-    return num_episodes, average_return
+    average_steps_per_second = number_steps / time_delta
+    statistics.append(
+        {'train_average_steps_per_second': average_steps_per_second})
+    logging.info('Average undiscounted return per training episode: %.2f',
+                 average_return)
+    logging.info('Average training steps per second: %.2f',
+                 average_steps_per_second)
+    return num_episodes, average_return, average_steps_per_second
 
   def _run_eval_phase(self, statistics):
     """Run evaluation phase.
@@ -389,8 +416,8 @@ class Runner(object):
     _, sum_returns, num_episodes = self._run_one_phase(
         self._evaluation_steps, statistics, 'eval')
     average_return = sum_returns / num_episodes if num_episodes > 0 else 0.0
-    tf.logging.info('Average undiscounted return per evaluation episode: %.2f',
-                    average_return)
+    logging.info('Average undiscounted return per evaluation episode: %.2f',
+                 average_return)
     statistics.append({'eval_average_return': average_return})
     return num_episodes, average_return
 
@@ -409,22 +436,24 @@ class Runner(object):
       A dict containing summary statistics for this iteration.
     """
     statistics = iteration_statistics.IterationStatistics()
-    tf.logging.info('Starting iteration %d', iteration)
-    num_episodes_train, average_reward_train = self._run_train_phase(
-        statistics)
+    logging.info('Starting iteration %d', iteration)
+    num_episodes_train, average_reward_train, average_steps_per_second = (
+        self._run_train_phase(statistics))
     num_episodes_eval, average_reward_eval = self._run_eval_phase(
         statistics)
 
     self._save_tensorboard_summaries(iteration, num_episodes_train,
                                      average_reward_train, num_episodes_eval,
-                                     average_reward_eval)
+                                     average_reward_eval,
+                                     average_steps_per_second)
     return statistics.data_lists
 
   def _save_tensorboard_summaries(self, iteration,
                                   num_episodes_train,
                                   average_reward_train,
                                   num_episodes_eval,
-                                  average_reward_eval):
+                                  average_reward_eval,
+                                  average_steps_per_second):
     """Save statistics as tensorboard summaries.
 
     Args:
@@ -433,16 +462,20 @@ class Runner(object):
       average_reward_train: float, The average training reward.
       num_episodes_eval: int, number of evaluation episodes run.
       average_reward_eval: float, The average evaluation reward.
+      average_steps_per_second: float, The average number of steps per second.
     """
-    summary = tf.Summary(value=[
-        tf.Summary.Value(tag='Train/NumEpisodes',
-                         simple_value=num_episodes_train),
-        tf.Summary.Value(tag='Train/AverageReturns',
-                         simple_value=average_reward_train),
-        tf.Summary.Value(tag='Eval/NumEpisodes',
-                         simple_value=num_episodes_eval),
-        tf.Summary.Value(tag='Eval/AverageReturns',
-                         simple_value=average_reward_eval)
+    summary = tf.compat.v1.Summary(value=[
+        tf.compat.v1.Summary.Value(
+            tag='Train/NumEpisodes', simple_value=num_episodes_train),
+        tf.compat.v1.Summary.Value(
+            tag='Train/AverageReturns', simple_value=average_reward_train),
+        tf.compat.v1.Summary.Value(
+            tag='Train/AverageStepsPerSecond',
+            simple_value=average_steps_per_second),
+        tf.compat.v1.Summary.Value(
+            tag='Eval/NumEpisodes', simple_value=num_episodes_eval),
+        tf.compat.v1.Summary.Value(
+            tag='Eval/AverageReturns', simple_value=average_reward_eval)
     ])
     self._summary_writer.add_summary(summary, iteration)
 
@@ -472,10 +505,10 @@ class Runner(object):
 
   def run_experiment(self):
     """Runs a full experiment, spread over multiple iterations."""
-    tf.logging.info('Beginning training...')
+    logging.info('Beginning training...')
     if self._num_iterations <= self._start_iteration:
-      tf.logging.warning('num_iterations (%d) < start_iteration(%d)',
-                         self._num_iterations, self._start_iteration)
+      logging.warning('num_iterations (%d) < start_iteration(%d)',
+                      self._num_iterations, self._start_iteration)
       return
 
     for iteration in range(self._start_iteration, self._num_iterations):
@@ -505,7 +538,7 @@ class TrainRunner(Runner):
       create_environment_fn: A function which receives a problem name and
         creates a Gym environment for that problem (e.g. an Atari 2600 game).
     """
-    tf.logging.info('Creating TrainRunner ...')
+    logging.info('Creating TrainRunner ...')
     super(TrainRunner, self).__init__(base_dir, create_agent_fn,
                                       create_environment_fn)
     self._agent.eval_mode = False
@@ -525,19 +558,24 @@ class TrainRunner(Runner):
       A dict containing summary statistics for this iteration.
     """
     statistics = iteration_statistics.IterationStatistics()
-    num_episodes_train, average_reward_train = self._run_train_phase(
-        statistics)
+    num_episodes_train, average_reward_train, average_steps_per_second = (
+        self._run_train_phase(statistics))
 
     self._save_tensorboard_summaries(iteration, num_episodes_train,
-                                     average_reward_train)
+                                     average_reward_train,
+                                     average_steps_per_second)
     return statistics.data_lists
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
-                                  average_reward):
+                                  average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
-    summary = tf.Summary(value=[
-        tf.Summary.Value(tag='Train/NumEpisodes', simple_value=num_episodes),
-        tf.Summary.Value(
+    summary = tf.compat.v1.Summary(value=[
+        tf.compat.v1.Summary.Value(
+            tag='Train/NumEpisodes', simple_value=num_episodes),
+        tf.compat.v1.Summary.Value(
             tag='Train/AverageReturns', simple_value=average_reward),
+        tf.compat.v1.Summary.Value(
+            tag='Train/AverageStepsPerSecond',
+            simple_value=average_steps_per_second),
     ])
     self._summary_writer.add_summary(summary, iteration)

@@ -57,7 +57,7 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
     return super().step(reward, observation)
 
   def reload_checkpoint(self, checkpoint_path):
-    ckpt = tf.train.get_checkpoint_state(checkpoint_path)
+    ckpt = tf.compat.v1.train.get_checkpoint_state(checkpoint_path)
     ckpt_path = ckpt.model_checkpoint_path
 
     MyRainbowAgent.reload_checkpoint(self, ckpt_path)
@@ -110,7 +110,7 @@ class MyLLAMNAgent(llamn_agent.AMNAgent):
     return action
 
   def reload_checkpoint(self, checkpoint_path):
-    ckpt = tf.train.get_checkpoint_state(checkpoint_path)
+    ckpt = tf.compat.v1.train.get_checkpoint_state(checkpoint_path)
     ckpt_path = ckpt.model_checkpoint_path
 
     MyDQNAgent.reload_checkpoint(self, ckpt_path)
