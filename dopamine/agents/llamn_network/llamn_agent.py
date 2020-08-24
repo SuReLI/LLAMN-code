@@ -176,6 +176,10 @@ class AMNAgent:
 
     self.experts = []
     llamn_name = 'llamn' if self.llamn_path else None
+
+    # If transfer by initialization :
+    llamn_name = None
+
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(

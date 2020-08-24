@@ -481,7 +481,8 @@ class Runner(object):
     for iteration in range(self._start_iteration, self._num_iterations):
       statistics = self._run_one_iteration(iteration)
       self._log_experiment(iteration, statistics)
-      self._checkpoint_experiment(iteration)
+      if (iteration+1) % 10 == 0 or iteration == self._num_iterations-1:
+        self._checkpoint_experiment(iteration)
 
 
 @gin.configurable

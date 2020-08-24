@@ -115,6 +115,13 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                    for var in self.online_convnet.variables
                    if 'llamn' in var.name}
 
+      # If transfer by initialization :
+      # We want to restore variables with names 'expert_pong/online/conv_1:0'
+      # from variables with names 'llamn/conv_1'
+      var_names = {('llamn/'+var.name.split('/', 2)[2][:-2]).replace('dense_2', 'dense_feat'): var
+                   for var in self.online_convnet.variables
+                   if 'dense_3' not in var.name}
+
       ckpt = tf.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
@@ -134,6 +141,9 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     """
     scope_name = self.name + '/' + name
     llamn_name = 'llamn' if self.llamn_path else None
+
+    # If transfer by initialization :
+    llamn_name = None
 
     network = self.network(self.num_actions, self._num_atoms, self._support,
                            self.feature_size, llamn_name=llamn_name,

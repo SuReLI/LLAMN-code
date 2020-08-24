@@ -25,7 +25,6 @@ import functools
 from multiprocessing import Process, Lock
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
-from dopamine.discrete_domains import iteration_statistics
 from dopamine.discrete_domains.llamn_atari_lib import Game
 
 from dopamine.discrete_domains.run_experiment import TrainRunner
@@ -335,7 +334,7 @@ class LLAMNRunner(TrainRunner):
   def _run_one_iteration(self, iteration):
     tf.logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
-    super()._run_one_iteration(iteration)
+    return super()._run_one_iteration(iteration)
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward):

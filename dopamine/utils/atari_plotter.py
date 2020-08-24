@@ -46,6 +46,8 @@ class AtariPlotter(plotter.Plotter):
     """
     super(AtariPlotter, self).__init__(parameter_dict)
     assert 'environment' in self.parameters
+    self.parameters['height'] = self.parameters['environment'].environment.observation_space.shape[0]
+    self.parameters['width'] = self.parameters['environment'].environment.observation_space.shape[1]
     self.game_surface = pygame.Surface((self.parameters['width'],
                                         self.parameters['height']))
 
