@@ -43,8 +43,8 @@ import tensorflow as tf
 class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
 
-  def __init__(self, sess, num_actions, llamn_path, name, summary_writer=None):
-    super().__init__(sess, num_actions, llamn_path, name, summary_writer=summary_writer)
+  def __init__(self, sess, num_actions, init_option, llamn_path, name, summary_writer=None):
+    super().__init__(sess, num_actions, init_option, llamn_path, name, summary_writer=summary_writer)
     self.rewards = []
 
   def _load_llamn(self):
@@ -76,12 +76,14 @@ class MyLLAMNAgent(llamn_agent.AMNAgent):
   def __init__(self, sess,
                max_num_actions,
                expert_num_actions,
-               llamn_path,
                expert_paths,
+               expert_init_option,
+               llamn_path,
                summary_writer=None):
 
     super().__init__(sess, max_num_actions, expert_num_actions,
-                     [], [], eval_mode=True, summary_writer=summary_writer)
+                     [], expert_init_option, [], eval_mode=True,
+                     summary_writer=summary_writer)
     self.q_values_list = [[[] for _ in range(expert_num_actions[i])]
                           for i in range(self.nb_experts)]
     self.reward_list = [[] for _ in range(self.nb_experts)]
@@ -148,28 +150,35 @@ class MyLLAMNRunner(LLAMNRunner):
       MyRunner.visualize(self, game_record_path, num_global_steps)
 
 
-def create_expert(sess, environment, llamn_path, name, summary_writer=None):
+def create_expert(sess, environment, expert_init_option, llamn_path, name, summary_writer=None):
   return MyExpertAgent(sess, num_actions=environment.action_space.n,
-                       llamn_path=llamn_path, name=name)
+                       init_option=expert_init_option, llamn_path=llamn_path, name=name)
 
 
-def run(agent, nb_day, games, nb_actions, num_steps, root_dir, config):
-  """Main entrypoint for running and generating visualizations."""
+def run_expert(nb_day, games, nb_actions, expert_init_option, num_steps, root_dir, config):
+  """Main entrypoint for running and generating visualizations of an Expert agent."""
 
-  phase = ('day_' if agent == 'expert' else 'night_') + str(nb_day)
+  gin.parse_config(config)
+  phase = 'day_' + str(nb_day)
   phase_dir = os.path.join(root_dir, phase)
 
-  base_dir = os.path.join(root_dir, 'agent_viz', phase)
+  for game in games:
+    # llamn_path must be non-False if it's not the first day, but don't need to be
+    # exact because we load from a checkpoint, not from a previous llamn network
+    runner = MyExpertRunner(phase_dir, game, expert_init_option, create_expert, (nb_day > 0))
+
+    # Image dir = results/AMN-2020.../agent_viz/day_1/expert_Pong/images
+    image_dir = os.path.join(root_dir, 'agent_viz', phase, f"expert_{game.name}", "images")
+    runner.visualize(image_dir, num_global_steps=num_steps)
+
+
+def run_llamn(nb_day, games, nb_actions, expert_init_option, num_steps, root_dir, config):
+  """Main entrypoint for running and generating visualizations of a LLAMN agent."""
+
   gin.parse_config(config)
+  phase = 'night_' + str(nb_day)
+  phase_dir = os.path.join(root_dir, phase)
+  base_dir = os.path.join(root_dir, 'agent_viz', phase)
 
-  if agent == 'expert':
-    for game in games:
-      # llamn_path must be non-False if it's not the first day, but don't need to be
-      # exact because we load from a checkpoint, not from a previous llamn network
-      runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
-      image_dir = os.path.join(base_dir, f"{agent}_{game.name}", "images")
-      runner.visualize(image_dir, num_global_steps=num_steps)
-
-  else:
-    runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)
-    runner.visualize(base_dir, num_global_steps=num_steps)
+  runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], expert_init_option, MyLLAMNAgent)
+  runner.visualize(base_dir, num_global_steps=num_steps)

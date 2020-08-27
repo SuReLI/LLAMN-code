@@ -32,6 +32,7 @@ class AMNAgent:
                max_num_actions,
                expert_num_actions,
                expert_paths,
+               expert_init_option,
                llamn_path,
                sleeping_memory=None,
                feature_weight=0.01,
@@ -80,6 +81,7 @@ class AMNAgent:
     self.ind_expert = 0
     self.nb_experts = len(expert_num_actions)
     self.llamn_path = llamn_path
+    self.expert_init_option = expert_init_option
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
 
@@ -132,7 +134,7 @@ class AMNAgent:
     var_map = atari_lib.maybe_transform_variable_names(
         tf.compat.v1.global_variables())
     self._saver = tf.compat.v1.train.Saver(var_list=var_map,
-                                 max_to_keep=max_tf_checkpoints_to_keep)
+                                           max_to_keep=max_tf_checkpoints_to_keep)
 
     self._observation = None
     self._last_observation = None
@@ -178,16 +180,12 @@ class AMNAgent:
       return
 
     self.experts = []
-    llamn_name = 'llamn' if self.llamn_path else None
-
-    # If transfer by initialization :
-    llamn_name = None
-
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
           num_actions, self.num_atoms, self.support,
-          self.feature_size, llamn_name=llamn_name, name=expert_name)
+          self.feature_size, create_llamn=self.llamn_path,
+          init_option=self.expert_init_option, name=expert_name)
       self.experts.append(expert)
 
   def _build_prev_llamn(self):
@@ -322,7 +320,7 @@ class AMNAgent:
       with tf.compat.v1.variable_scope('Losses'):
         # EWC loss summary
         if ewc_loss:
-          ewc_sum = tf.compat.v1.summary.scalar(f'Loss_EWC', tf.reduce_mean(ewc_loss))
+          ewc_sum = tf.compat.v1.summary.scalar('Loss_EWC', tf.reduce_mean(ewc_loss))
           for list_sum in self.summaries:
             list_sum.append(ewc_sum)
 

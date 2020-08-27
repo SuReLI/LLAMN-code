@@ -54,6 +54,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
   def __init__(self,
                sess,
                num_actions,
+               init_option,
                llamn_path,
                name,
                feature_size=512,
@@ -79,9 +80,10 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                summary_writer=None,
                summary_writing_frequency=500):
 
-    self.feature_size = feature_size
     self.llamn_path = llamn_path
     self.name = name
+    self.init_option = init_option
+    self.feature_size = feature_size
 
     super().__init__(
         sess=sess,
@@ -109,18 +111,24 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
   def _load_llamn(self):
     if self.llamn_path:
-      # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
-      # from variables with names 'llamn/conv_1'
-      var_names = {var.name.split('/', 2)[2][:-2]: var
-                   for var in self.online_convnet.variables
-                   if 'llamn' in var.name}
 
-      # If transfer by initialization :
-      # We want to restore variables with names 'expert_pong/online/conv_1:0'
-      # from variables with names 'llamn/conv_1'
-      var_names = {('llamn/'+var.name.split('/', 2)[2][:-2]).replace('dense_2', 'dense_feat'): var
-                   for var in self.online_convnet.variables
-                   if 'dense_3' not in var.name}
+      # Initialization by weights copy
+      if self.init_option == 1:
+        # We want to restore variables with names 'expert_Pong/online/conv_1:0'
+        # from variables with names 'llamn/conv_1'
+        var_names = {('llamn/'+var.name.split('/', 2)[2][:-2]): var
+                     for var in self.online_convnet.variables
+                     if 'dense_out' not in var.name}
+
+      elif self.init_option == 2:
+        raise NotImplementedError("This initialization option is not implemented yet")
+
+      elif self.init_option == 3:
+        # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
+        # from variables with names 'llamn/conv_1'
+        var_names = {var.name.split('/', 2)[2][:-2]: var
+                     for var in self.online_convnet.variables
+                     if 'llamn' in var.name}
 
       ckpt = tf.compat.v1.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
@@ -140,14 +148,10 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
       network: tf.keras.Model, the network instantiated by the Keras model.
     """
     scope_name = self.name + '/' + name
-    llamn_name = 'llamn' if self.llamn_path else None
-
-    # If transfer by initialization :
-    llamn_name = None
 
     network = self.network(self.num_actions, self._num_atoms, self._support,
-                           self.feature_size, llamn_name=llamn_name,
-                           name=scope_name)
+                           self.feature_size, create_llamn=self.llamn_path,
+                           init_option=self.init_option, name=scope_name)
     return network
 
   def _build_sync_op(self):

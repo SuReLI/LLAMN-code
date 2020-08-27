@@ -10,6 +10,7 @@ import gin.tf.external_configurables
 # Atari
 MasterRunner.games_names = [['Pong', 'Breakout'], ['SpaceInvaders']]
 MasterRunner.sticky_actions = True
+MasterRunner.expert_init_option = 1
 
 # Runner
 Runner.num_iterations = 100
