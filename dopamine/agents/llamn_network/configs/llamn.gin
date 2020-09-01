@@ -10,7 +10,6 @@ import gin.tf.external_configurables
 # Atari
 MasterRunner.games_names = [['Pong', 'Breakout'], ['SpaceInvaders']]
 MasterRunner.sticky_actions = True
-MasterRunner.expert_init_option = 1
 
 # Runner
 Runner.num_iterations = 100
@@ -21,15 +20,18 @@ LLAMNRunner.num_iterations = 200
 LLAMNRunner.training_steps = 250000
 LLAMNRunner.max_steps_per_episode = 27000
 
-
 # Common Expert / LLAMN
 update_horizon = 3
 feature_size = 256
+num_atoms = 51
+vmax = 10.
+expert_init_option = 1
 
 # Expert
+ExpertAgent.init_option = %expert_init_option
 ExpertAgent.feature_size = %feature_size
-ExpertAgent.num_atoms = 51
-ExpertAgent.vmax = 10.
+ExpertAgent.num_atoms = %num_atoms
+ExpertAgent.vmax = %vmax
 ExpertAgent.gamma = 0.99
 ExpertAgent.update_horizon = %update_horizon
 ExpertAgent.min_replay_history = 20000  # agent steps
@@ -45,9 +47,11 @@ ExpertAgent.optimizer = @tf.train.AdamOptimizer()
 tf.train.AdamOptimizer.learning_rate = 0.0000625
 tf.train.AdamOptimizer.epsilon = 0.00015
 
-
 # AMN
 AMNAgent.feature_size = %feature_size
+AMNAgent.expert_init_option = %expert_init_option
+AMNAgent.expert_num_atoms = %num_atoms
+AMNAgent.expert_vmax = %vmax
 AMNAgent.update_horizon = %update_horizon
 AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 AMNAgent.optimizer = @tf.train.AdamOptimizer()

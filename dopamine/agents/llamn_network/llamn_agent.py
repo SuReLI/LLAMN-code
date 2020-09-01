@@ -32,7 +32,6 @@ class AMNAgent:
                max_num_actions,
                expert_num_actions,
                expert_paths,
-               expert_init_option,
                llamn_path,
                sleeping_memory=None,
                feature_weight=0.01,
@@ -50,8 +49,9 @@ class AMNAgent:
                epsilon_train=0.01,
                epsilon_eval=0.001,
                epsilon_decay_period=250000,
-               num_atoms=51,
-               vmax=10,
+               expert_init_option=1,
+               expert_num_atoms=51,
+               expert_vmax=10,
                tf_device='/cpu:*',
                eval_mode=False,
                max_tf_checkpoints_to_keep=4,
@@ -86,7 +86,7 @@ class AMNAgent:
     self.ewc_weight = ewc_weight
 
     # Rainbow Init
-    vmax = float(vmax)
+    expert_vmax = float(expert_vmax)
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
@@ -100,8 +100,11 @@ class AMNAgent:
     self.epsilon_eval = epsilon_eval
     self.epsilon_decay_period = epsilon_decay_period
     self.update_period = update_period
-    self.num_atoms = num_atoms
-    self.support = tf.linspace(-vmax, vmax, num_atoms)
+
+    # Expert parameters
+    self.expert_num_atoms = expert_num_atoms
+    self.expert_support = tf.linspace(-expert_vmax, expert_vmax, expert_num_atoms)
+
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
     self.optimizer = optimizer
@@ -183,7 +186,7 @@ class AMNAgent:
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
-          num_actions, self.num_atoms, self.support,
+          num_actions, self.expert_num_atoms, self.expert_support,
           self.feature_size, create_llamn=self.llamn_path,
           init_option=self.expert_init_option, name=expert_name)
       self.experts.append(expert)

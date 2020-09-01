@@ -36,26 +36,24 @@ import tensorflow as tf
 import gin.tf
 
 
-def create_expert(sess, environment, expert_init_option, llamn_path, name,
+def create_expert(sess, environment, llamn_path, name,
                   summary_writer=None, debug_mode=False):
   if not debug_mode:
     summary_writer = None
 
   return expert_rainbow_agent.ExpertAgent(
-      sess, num_actions=environment.action_space.n, init_option=expert_init_option,
+      sess, num_actions=environment.action_space.n,
       llamn_path=llamn_path, name=name, summary_writer=summary_writer)
 
 
 @gin.configurable
 class MasterRunner:
 
-  def __init__(self, base_dir, parallel, expert_init_option,
-               games_names=None, sticky_actions=True):
+  def __init__(self, base_dir, parallel, games_names=None, sticky_actions=True):
     assert games_names is not None
 
     self.base_dir = base_dir
     self.parallel = parallel
-    self.expert_init_option = expert_init_option
     self.sentinel = os.path.join(base_dir, 'progress')
 
     self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
@@ -115,7 +113,6 @@ class MasterRunner:
   def run_expert(self, base_dir, llamn_path, game):
     expert = ExpertRunner(base_dir,
                           environment=game,
-                          expert_init_option=self.expert_init_option,
                           llamn_path=llamn_path)
 
     logging.info('Running expert')
@@ -128,8 +125,7 @@ class MasterRunner:
     llamn = LLAMNRunner(base_dir,
                         num_actions=self.max_num_actions,
                         expert_games=games,
-                        expert_paths=paths,
-                        expert_init_option=self.expert_init_option)
+                        expert_paths=paths)
 
     print(f"\tRunning llamn {self.curr_day}")
     logging.info('Running llamn')
@@ -199,7 +195,6 @@ class ExpertRunner(TrainRunner):
   def __init__(self,
                base_dir,
                environment,
-               expert_init_option,
                create_agent_fn=create_expert,
                llamn_path=None):
 
@@ -207,7 +202,6 @@ class ExpertRunner(TrainRunner):
     base_dir = os.path.join(base_dir, name)
 
     create_expert_fn = functools.partial(create_agent_fn,
-                                         expert_init_option=expert_init_option,
                                          llamn_path=llamn_path,
                                          name=name)
 
@@ -240,7 +234,6 @@ class LLAMNRunner(TrainRunner):
                num_actions,
                expert_games,
                expert_paths,
-               expert_init_option,
                create_agent=llamn_agent.AMNAgent,
                checkpoint_file_prefix='ckpt',
                logging_file_prefix='log',
@@ -279,7 +272,6 @@ class LLAMNRunner(TrainRunner):
                                max_num_actions=num_actions,
                                expert_num_actions=expert_num_actions,
                                expert_paths=expert_paths,
-                               expert_init_option=expert_init_option,
                                llamn_path=llamn_path,
                                summary_writer=self._summary_writer)
 

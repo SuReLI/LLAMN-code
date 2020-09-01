@@ -71,23 +71,27 @@ def get_config(root_dir):
   with open(prev_gin_config, 'r') as config_file:
     config = config_file.read().split('\n')
 
-  expert_init_option = None
-  games_line = None
+  feature_size_line = ''
+  expert_init_option_lines = ''
+  games_line = ''
   for index, line in enumerate(config):
-    if line.startswith('MasterRunner.expert_init_option = '):
-      expert_init_option = int(line[34:])
+    if line.startswith('feature_size = '):
+      feature_size_line = line + '\n'
+    if 'init_option = ' in line:
+      expert_init_option_lines += line + '\n'
     if line.startswith('MasterRunner.games_names = '):
       games_line = line
       while not config[index+1][0].isalnum():
         games_line += config[index+1]
         index += 1
 
-  if expert_init_option is None or games_line is None:
-    raise ValueError("Expert init option or game list not found in saved config file")
+  if not feature_size_line or not expert_init_option_lines or not games_line:
+    raise ValueError("Feature size, xpert init option or game list not found"
+                     "in saved config file")
 
-  config = """
-  WrappedReplayBuffer.replay_capacity = 300
-  """
+  config = (f"{feature_size_line}"
+            f"{expert_init_option_lines}"
+             "WrappedReplayBuffer.replay_capacity = 300")
 
   games_line = games_line[games_line.index('['):]
   games_names = ast.literal_eval(games_line)
@@ -97,31 +101,23 @@ def get_config(root_dir):
   max_num_actions = max([game.num_actions for game_list in games
                          for game in game_list])
 
-  return config, games, max_num_actions, expert_init_option
+  return config, games, max_num_actions
 
 
 def main(_):
   expe_dir = get_expe_dir(FLAGS.root_dir)
   print(f'\033[91mVisualizing networks in directory {expe_dir}\033[0m')
 
-  config, game_list, nb_actions, expert_init_option = get_config(expe_dir)
+  config, game_list, nb_actions = get_config(expe_dir)
   for day, games in enumerate(game_list):
-    llamn_viz_lib.run_expert(nb_day=day,
-                             games=games,
-                             nb_actions=nb_actions,
-                             expert_init_option=expert_init_option,
-                             num_steps=FLAGS.num_steps,
-                             root_dir=expe_dir,
-                             config=config)
-
-    llamn_viz_lib.run_llamn(nb_day=day,
-                            games=games,
-                            nb_actions=nb_actions,
-                            expert_init_option=expert_init_option,
-                            num_steps=FLAGS.num_steps,
-                            root_dir=expe_dir,
-                            config=config)
-
+    for phase in ('day', 'night'):
+      llamn_viz_lib.run(phase=phase,
+                        nb_day=day,
+                        games=games,
+                        nb_actions=nb_actions,
+                        num_steps=FLAGS.num_steps,
+                        root_dir=expe_dir,
+                        config=config)
 
 if __name__ == '__main__':
   app.run(main)
