@@ -61,6 +61,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                observation_dtype=dqn_agent.NATURE_DQN_DTYPE,
                stack_size=dqn_agent.NATURE_DQN_STACK_SIZE,
                network=llamn_atari_lib.ExpertNetwork,
+               distributional_night=False,
                init_option=1,
                num_atoms=51,
                vmax=10.,
@@ -84,6 +85,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     self.name = name
     self.init_option = init_option
     self.feature_size = feature_size
+    self.distributional_night = False
 
     super().__init__(
         sess=sess,
@@ -149,9 +151,14 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     """
     scope_name = self.name + '/' + name
 
-    network = self.network(self.num_actions, self._num_atoms, self._support,
-                           self.feature_size, create_llamn=self.llamn_path,
-                           init_option=self.init_option, name=scope_name)
+    network = self.network(self.num_actions,
+                           self._num_atoms,
+                           self._support,
+                           self.feature_size,
+                           create_llamn=self.llamn_path,
+                           init_option=self.init_option,
+                           distributional_night=self.distributional_night,
+                           name=scope_name)
     return network
 
   def _build_sync_op(self):

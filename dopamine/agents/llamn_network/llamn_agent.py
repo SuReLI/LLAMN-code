@@ -49,6 +49,7 @@ class AMNAgent:
                epsilon_train=0.01,
                epsilon_eval=0.001,
                epsilon_decay_period=250000,
+               distributional_night=False,
                expert_init_option=1,
                expert_num_atoms=51,
                expert_vmax=10,
@@ -104,6 +105,11 @@ class AMNAgent:
     # Expert parameters
     self.expert_num_atoms = expert_num_atoms
     self.expert_support = tf.linspace(-expert_vmax, expert_vmax, expert_num_atoms)
+
+    # AMN parameters
+    self.distributional_night = distributional_night
+    self.llamn_num_atoms = self.expert_num_atoms if self.distributional_night else None
+    self.llamn_support = self.expert_support if self.distributional_night else None
 
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
@@ -186,15 +192,23 @@ class AMNAgent:
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
       expert = llamn_atari_lib.ExpertNetwork(
-          num_actions, self.expert_num_atoms, self.expert_support,
-          self.feature_size, create_llamn=self.llamn_path,
-          init_option=self.expert_init_option, name=expert_name)
+          num_actions,
+          self.expert_num_atoms,
+          self.expert_support,
+          self.feature_size,
+          create_llamn=self.llamn_path,
+          init_option=self.expert_init_option,
+          distributional_night=self.distributional_night,
+          name=expert_name)
       self.experts.append(expert)
 
   def _build_prev_llamn(self):
     if not self.eval_mode and self.llamn_path:
-      self.previous_llamn = llamn_atari_lib.AMNNetwork(
-          self.llamn_num_actions, self.feature_size, name='prev_llamn')
+      self.previous_llamn = llamn_atari_lib.AMNNetwork(self.llamn_num_actions,
+                                                       self.llamn_num_atoms,
+                                                       self.llamn_support,
+                                                       self.feature_size,
+                                                       name='prev_llamn')
 
   def _build_replay_buffers(self):
     self.replays = []
@@ -227,43 +241,50 @@ class AMNAgent:
       saver.restore(self._sess, ckpt_path)
 
   def _create_network(self):
-    network = self.network(self.llamn_num_actions, self.feature_size, name='llamn')
+    network = self.network(self.llamn_num_actions, self.llamn_num_atoms,
+                           self.llamn_support, self.feature_size, name='llamn')
     return network
 
   def _build_networks(self):
     self.convnet = self._create_network()
 
-    net_logits = self.convnet(self.state_ph).logits
-
     self._net_q_output = []
     self._net_q_argmax = []
-    self._net_q_softmax = []
+    self._net_q_distrib = []
     self._net_features = []
-    self._expert_q_softmax = []
+    self._expert_q_distrib = []
     self._expert_features = []
     self._previous_llamn_output = []
+
+    net_q_values = self.convnet(self.state_ph).q_values
 
     for i in range(self.nb_experts):
       replay_state = self.replays[i].states
       expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
-      partial_output = tf.boolean_mask(net_logits, expert_mask, axis=1)
-      self._net_q_output.append(partial_output)
-      q_argmax = tf.argmax(partial_output, axis=1)[0]
+      partial_q_values = tf.boolean_mask(net_q_values, expert_mask, axis=1)
+      self._net_q_output.append(partial_q_values)
+      q_argmax = tf.argmax(partial_q_values, axis=1)[0]
       self._net_q_argmax.append(q_argmax)
 
       # Need experts only to compute the loss, no need when testing the policy
       if not self.eval_mode:
         net_output = self.convnet(replay_state)
-        partial_output = tf.boolean_mask(net_output.logits, expert_mask, axis=1)
-        q_softmax = tf.nn.softmax(partial_output, axis=1)
-        self._net_q_softmax.append(q_softmax)
+        if not self.distributional_night:
+          partial_q_values = tf.boolean_mask(net_output.q_values, expert_mask, axis=1)
+          net_q_distrib = tf.nn.softmax(partial_q_values, axis=1)
+        else:
+          net_q_distrib = tf.boolean_mask(net_output.probabilities, expert_mask, axis=1)
+        self._net_q_distrib.append(net_q_distrib)
         self._net_features.append(net_output.features)
 
         expert_output = self.experts[i](replay_state)
-        expert_q_softmax = tf.nn.softmax(expert_output.q_values, axis=1)
-        self._expert_q_softmax.append(tf.stop_gradient(expert_q_softmax))
+        if not self.distributional_night:
+          expert_q_distrib = tf.nn.softmax(expert_output.q_values, axis=1)
+        else:
+          expert_q_distrib = expert_output.probabilities
+        self._expert_q_distrib.append(tf.stop_gradient(expert_q_distrib))
         self._expert_features.append(tf.stop_gradient(expert_output.features))
 
         if self.llamn_path:
@@ -271,12 +292,16 @@ class AMNAgent:
           self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
 
   def _build_xent_loss(self, i_task):
-    expert_softmax = self._expert_q_softmax[i_task]
-    net_softmax = self._net_q_softmax[i_task]
+    expert_q_distrib = self._expert_q_distrib[i_task]
+    net_q_distrib = self._net_q_distrib[i_task]
 
-    log_net_softmax = tf.minimum(tf.math.log(net_softmax + 1e-10), 0.0)
-    loss = expert_softmax * log_net_softmax
-    return -tf.reduce_sum(loss, axis=1)
+    log_net_distrib = tf.minimum(tf.math.log(net_q_distrib + 1e-10), 0.0)
+    loss = expert_q_distrib * log_net_distrib
+
+    if not self.distributional_night:
+      return -tf.reduce_sum(loss, axis=1)
+    else:
+      return -tf.reduce_sum(loss, axis=(1, 2))
 
   def _build_l2_loss(self, i_task):
     expert_features = self._expert_features[i_task]

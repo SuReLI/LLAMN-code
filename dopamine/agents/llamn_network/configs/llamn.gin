@@ -26,6 +26,7 @@ feature_size = 256
 num_atoms = 51
 vmax = 10.
 expert_init_option = 1
+distributional_night = True
 
 # Expert
 ExpertAgent.init_option = %expert_init_option
@@ -49,6 +50,7 @@ tf.train.AdamOptimizer.epsilon = 0.00015
 
 # AMN
 AMNAgent.feature_size = %feature_size
+AMNAgent.distributional_night = %distributional_night
 AMNAgent.expert_init_option = %expert_init_option
 AMNAgent.expert_num_atoms = %num_atoms
 AMNAgent.expert_vmax = %vmax
