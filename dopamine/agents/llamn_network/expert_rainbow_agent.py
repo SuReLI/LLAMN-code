@@ -85,7 +85,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     self.name = name
     self.init_option = init_option
     self.feature_size = feature_size
-    self.distributional_night = False
+    self.distributional_night = distributional_night
 
     super().__init__(
         sess=sess,
@@ -123,7 +123,12 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                      if 'dense_out' not in var.name}
 
       elif self.init_option == 2:
-        raise NotImplementedError("This initialization option is not implemented yet")
+        if not self.distributional_night:
+          raise Exception("Must have distributional nights to activate this option")
+
+        var_names = {('llamn/'+var.name.split('/', 2)[2][:-2]): var
+                     for var in self.online_convnet.variables
+                     if 'dense_out' not in var.name}
 
       elif self.init_option == 3:
         # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
@@ -137,6 +142,21 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
 
       saver = tf.compat.v1.train.Saver(var_list=var_names)
       saver.restore(self._sess, ckpt_path)
+
+      if self.init_option == 2:
+        # The LLAMN usually has more outputs than the expert (= the maximum number of
+        # actions over every possible tasks), so we have to manually truncate the llamn
+        # weights and assign them to the expert's
+        weight_reader = tf.python.training.py_checkpoint_reader.NewCheckpointReader(ckpt_path)
+        llamn_kernel = weight_reader.get_tensor('llamn/dense_out/kernel')
+        llamn_bias = weight_reader.get_tensor('llamn/dense_out/bias')
+
+        num_outputs = self.num_actions * self._num_atoms
+        expert_kernel, expert_bias = self.online_convnet.dense_output.weights
+        assign_kernel_op = expert_kernel.assign(llamn_kernel[:, 0:num_outputs])
+        assign_bias_op = expert_bias.assign(llamn_bias[0:num_outputs])
+
+        self._sess.run([assign_kernel_op, assign_bias_op])
 
       self._sess.run(self._sync_qt_ops)
 

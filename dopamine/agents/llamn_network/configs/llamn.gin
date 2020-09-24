@@ -30,6 +30,7 @@ distributional_night = True
 
 # Expert
 ExpertAgent.init_option = %expert_init_option
+ExpertAgent.distributional_night = %distributional_night
 ExpertAgent.feature_size = %feature_size
 ExpertAgent.num_atoms = %num_atoms
 ExpertAgent.vmax = %vmax
