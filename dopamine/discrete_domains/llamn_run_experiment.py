@@ -31,6 +31,7 @@ from dopamine.discrete_domains.llamn_atari_lib import Game
 from dopamine.discrete_domains import iteration_statistics
 from dopamine.discrete_domains.run_experiment import TrainRunner
 
+import numpy as np
 import tensorflow as tf
 
 import gin.tf
@@ -274,9 +275,9 @@ class LLAMNRunner(TrainRunner):
     else:
       llamn_path = None
 
-    self.ind_env = 0
     self._names = [game.name for game in expert_games]
     self._environments = [game.create() for game in expert_games]
+    self._nb_envs = len(self._environments)
     expert_num_actions = [env.action_space.n for env in self._environments]
     config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
@@ -298,38 +299,77 @@ class LLAMNRunner(TrainRunner):
     self._agent.load_networks()
 
   @property
-  def _name(self):
-    return self._names[self.ind_env]
+  def _game_index(self):
+    return self._agent.ind_expert
 
+  @_game_index.setter
+  def _game_index(self, value):
+    self._agent.ind_expert = value
+  
   @property
   def _environment(self):
-    return self._environments[self.ind_env]
+    return self._environments[self._game_index]
+
 
   def _run_one_phase(self, min_steps, statistics, run_mode_str):
-    step_count = [0] * len(self._environments)
-    num_episodes = [0] * len(self._environments)
-    sum_returns = [0.] * len(self._environments)
+    step_count = [0] * self._nb_envs
+    num_episodes = [0] * self._nb_envs
+    sum_returns = [0.] * self._nb_envs
 
-    # Continue to run every environment while at least one didn't finish its steps
-    while min(step_count) < min_steps:
-      self._agent.ind_expert = self.ind_env
+    actions = [self._initialize_episode() for self._game_index in range(self._nb_envs)]
+    finished = [False] * self._nb_envs
 
-      episode_length, episode_return = self._run_one_episode()
-      statistics.append({
-          '{}_{}_episode_lengths'.format(self._name, run_mode_str): episode_length,
-          '{}_{}_episode_returns'.format(self._name, run_mode_str): episode_return
-      })
-      step_count[self.ind_env] += episode_length
-      sum_returns[self.ind_env] += episode_return
-      num_episodes[self.ind_env] += 1
-      # We use sys.stdout.write instead of logging so as to flush frequently
-      # without generating a line break.
-      sys.stdout.write('\t\tSteps executed on {}: {} '.format(self._name, step_count[self.ind_env]) +
-                       'Episode length: {} '.format(episode_length) +
-                       'Return: {}\r'.format(episode_return))
-      sys.stdout.flush()
+    step_number = [0] * self._nb_envs
+    total_reward = [0] * self._nb_envs
 
-      self.ind_env = (self.ind_env + 1) % len(self._environments)
+    while not all(finished):
+
+      for self._game_index in range(self._nb_envs):
+        if finished[self._game_index]:
+          continue
+
+        # print("Running one step on ", self._environment.environment.game)
+        observation, reward, is_terminal = self._run_one_step(actions[self._game_index])
+
+        total_reward[self._game_index] += reward
+        step_number[self._game_index] += 1
+
+        # Perform reward clipping.
+        reward = np.clip(reward, -1, 1)
+
+        # End of episode
+        if self._environment.game_over or step_number[self._game_index] == self._max_steps_per_episode:
+          num_episodes[self._game_index] += 1
+          step_count[self._game_index] += step_number[self._game_index]
+          sum_returns[self._game_index] += total_reward[self._game_index]
+
+          name = self._names[self._game_index]
+          statistics.append({
+              '{}_{}_episode_lengths'.format(name, run_mode_str): step_number[self._game_index],
+              '{}_{}_episode_returns'.format(name, run_mode_str): total_reward[self._game_index]
+          })
+
+          sys.stdout.write('\t\tSteps executed on {}: {} '.format(name, step_count[self._game_index]) +
+                           'Episode length: {} '.format(step_number[self._game_index]) +
+                           'Return: {}\r'.format(total_reward[self._game_index]))
+          sys.stdout.flush()
+
+          step_number[self._game_index] = 0
+          total_reward[self._game_index] = 0
+          self._end_episode(reward)
+
+          if step_count[self._game_index] > min_steps:
+            finished[self._game_index] = True
+          else:
+            actions[self._game_index] = self._initialize_episode()
+
+        # Loss of a life
+        elif is_terminal:
+          self._agent.end_episode(reward)
+          actions[self._game_index] = self._agent.begin_episode(observation)
+
+        else:
+          actions[self._game_index] = self._agent.step(reward, observation)
 
     return step_count, sum_returns, num_episodes
 
