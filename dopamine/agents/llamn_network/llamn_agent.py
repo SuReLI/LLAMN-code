@@ -49,6 +49,7 @@ class AMNAgent:
                epsilon_train=0.01,
                epsilon_eval=0.001,
                epsilon_decay_period=250000,
+               replay_scheme='prioritized',
                distributional_night=False,
                expert_init_option=1,
                expert_num_atoms=51,
@@ -56,12 +57,6 @@ class AMNAgent:
                tf_device='/cpu:*',
                eval_mode=False,
                max_tf_checkpoints_to_keep=4,
-               optimizer=tf.compat.v1.train.RMSPropOptimizer(
-                   learning_rate=0.00025,
-                   decay=0.95,
-                   momentum=0.0,
-                   epsilon=0.00001,
-                   centered=True),
                summary_writer=None,
                summary_writing_frequency=500,
                allow_partial_reload=False):
@@ -70,7 +65,6 @@ class AMNAgent:
     logging.info('Creating %s agent with the following parameters:',
                  self.__class__.__name__)
     logging.info('\t tf_device: %s', tf_device)
-    logging.info('\t optimizer: %s', optimizer)
     logging.info('\t max_tf_checkpoints_to_keep: %d',
                  max_tf_checkpoints_to_keep)
 
@@ -100,6 +94,7 @@ class AMNAgent:
     self.epsilon_train = epsilon_train
     self.epsilon_eval = epsilon_eval
     self.epsilon_decay_period = epsilon_decay_period
+    self.replay_scheme = replay_scheme
     self.update_period = update_period
 
     # Expert parameters
@@ -113,7 +108,10 @@ class AMNAgent:
 
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
-    self.optimizer = optimizer
+    self.optimizers = [tf.compat.v1.train.AdamOptimizer(learning_rate=0.0000625,
+                                                        epsilon=0.00015,
+                                                        name='adam_'+str(i))
+                       for i in range(self.nb_experts)]
     self.summary_writer = summary_writer if not self.eval_mode else None
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
@@ -161,8 +159,8 @@ class AMNAgent:
     self.states[self.ind_expert] = value
 
   @property
-  def replay(self):
-    return self.replays[self.ind_expert]
+  def _replay(self):
+    return self._replays[self.ind_expert]
 
   @property
   def q_argmax(self):
@@ -211,7 +209,10 @@ class AMNAgent:
                                                        name='prev_llamn')
 
   def _build_replay_buffers(self):
-    self.replays = []
+    if self.replay_scheme not in ['uniform', 'prioritized']:
+      raise ValueError('Invalid replay scheme: {}'.format(self.replay_scheme))
+
+    self._replays = []
     for _ in range(self.nb_experts):
       replay = prioritized_replay_buffer.WrappedPrioritizedReplayBuffer(
           observation_shape=self.observation_shape,
@@ -219,7 +220,7 @@ class AMNAgent:
           update_horizon=self.update_horizon,
           gamma=self.gamma,
           observation_dtype=self.observation_dtype.as_numpy_dtype)
-      self.replays.append(replay)
+      self._replays.append(replay)
 
   def load_networks(self):
     for i in range(self.nb_experts):
@@ -259,7 +260,7 @@ class AMNAgent:
     net_q_values = self.convnet(self.state_ph).q_values
 
     for i in range(self.nb_experts):
-      replay_state = self.replays[i].states
+      replay_state = self._replays[i].states
       expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
@@ -340,7 +341,22 @@ class AMNAgent:
       l2_losses.append(l2_loss)
       total_losses.append(loss)
 
-      train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
+      if self.replay_scheme == 'prioritized':
+
+        probs = self._replays[i_task].transition['sampling_probabilities']
+        loss_weights = 1.0 / tf.sqrt(probs + 1e-10)
+        loss_weights /= tf.reduce_max(loss_weights)
+
+        update_priorities_op = self._replays[i_task].tf_set_priority(
+            self._replays[i_task].indices, tf.sqrt(loss + 1e-10))
+
+        loss = loss_weights * loss
+
+      else:
+        update_priorities_op = tf.no_op()
+
+      with tf.control_dependencies([update_priorities_op]):
+        train_ops.append(self.optimizers[i_task].minimize(tf.reduce_mean(loss)))
 
     if self.summary_writer is not None:
       self.summaries = [[] for i in range(self.nb_experts)]
@@ -406,7 +422,7 @@ class AMNAgent:
 
   def _train_step(self):
 
-    if self.replay.memory.add_count > self.min_replay_history:
+    if self._replay.memory.add_count > self.min_replay_history:
       if self.training_steps % self.update_period == 0:
         self._sess.run(self._train_op)
         if (self.summary_writer is not None
@@ -430,10 +446,13 @@ class AMNAgent:
                         is_terminal,
                         priority=None):
     if priority is None:
-      priority = self.replay.memory.sum_tree.max_recorded_priority
+      if self.replay_scheme == 'uniform':
+        priority = 1.
+      else:
+        priority = self._replay.memory.sum_tree.max_recorded_priority
 
     if not self.eval_mode:
-      self.replay.add(last_observation, action, reward, is_terminal, priority)
+      self._replay.add(last_observation, action, reward, is_terminal, priority)
 
   def _reset_state(self):
     self.state.fill(0)
@@ -465,7 +484,7 @@ class AMNAgent:
       game_name = self.expert_paths[i].rsplit('_', 1)[1]
       replay_path = os.path.join(checkpoint_dir, f'replay_{game_name}')
       tf.io.gfile.mkdir(replay_path)
-      self.replays[i].save(replay_path, iteration_number)
+      self._replays[i].save(replay_path, iteration_number)
     bundle_dictionary = {}
     bundle_dictionary['states'] = self.states
     bundle_dictionary['training_steps_list'] = self.training_steps_list
@@ -495,7 +514,7 @@ class AMNAgent:
       for i in range(self.nb_experts):
         game_name = self.expert_paths[i].rsplit('_', 1)[1]
         replay_path = os.path.join(checkpoint_dir, f'replay_{game_name}')
-        self.replays[i].load(replay_path, iteration_number)
+        self._replays[i].load(replay_path, iteration_number)
     except tf.errors.NotFoundError:
       if not self.allow_partial_reload:
         # If we don't allow partial reloads, we will return False.
