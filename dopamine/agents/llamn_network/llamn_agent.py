@@ -131,7 +131,7 @@ class AMNAgent:
 
       self._build_networks()
 
-      self._train_ops = self._build_train_ops()
+      self._train_op = tf.group(self._build_train_ops())
 
       if self.summary_writer is not None:
         self._merged_summaries = [tf.compat.v1.summary.merge(s) for s in self.summaries]
@@ -165,10 +165,6 @@ class AMNAgent:
   @property
   def q_argmax(self):
     return self._net_q_argmax[self.ind_expert]
-
-  @property
-  def _train_op(self):
-    return self._train_ops[self.ind_expert]
 
   @property
   def training_steps(self):

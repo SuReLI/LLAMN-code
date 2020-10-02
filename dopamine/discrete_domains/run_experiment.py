@@ -364,7 +364,8 @@ class Runner(object):
       num_episodes += 1
       # We use sys.stdout.write instead of logging so as to flush frequently
       # without generating a line break.
-      sys.stdout.write('\t\tSteps executed: {} '.format(step_count) +
+      game_name = self._environment.environment.game.capitalize()
+      sys.stdout.write('\t\tSteps executed on {}: {} '.format(game_name, step_count) +
                        'Episode length: {} '.format(episode_length) +
                        'Return: {}\r'.format(episode_return))
       sys.stdout.flush()

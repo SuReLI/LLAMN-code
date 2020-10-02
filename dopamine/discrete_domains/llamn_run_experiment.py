@@ -28,7 +28,6 @@ from absl import logging
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains.llamn_atari_lib import Game
-from dopamine.discrete_domains import iteration_statistics
 from dopamine.discrete_domains.run_experiment import TrainRunner
 
 import numpy as np
@@ -211,10 +210,6 @@ class ExpertRunner(TrainRunner):
 
     self._agent._load_llamn()
 
-  def _run_one_phase(self, *args, **kwargs):
-    number_steps, sum_returns, num_episodes = super()._run_one_phase(*args, **kwargs)
-    return number_steps, sum_returns, num_episodes
-
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
@@ -305,11 +300,10 @@ class LLAMNRunner(TrainRunner):
   @_game_index.setter
   def _game_index(self, value):
     self._agent.ind_expert = value
-  
+
   @property
   def _environment(self):
     return self._environments[self._game_index]
-
 
   def _run_one_phase(self, min_steps, statistics, run_mode_str):
     step_count = [0] * self._nb_envs
