@@ -52,6 +52,7 @@ flags.DEFINE_multi_string(
     '(e.g. "DQNAgent.epsilon_train=0.1",'
     '      "create_environment.game_name="Pong"").')
 flags.DEFINE_boolean('resume', False, 'Whether to resume a run or not')
+flags.DEFINE_boolean('replay_last_day', False, 'Whether to resume a run or not')
 flags.DEFINE_string('ckpt_dir', None, 'Checkpoint dir from which to resume')
 flags.DEFINE_boolean('no_parallel', False,
                      'Whether to use multiple processes or not')
@@ -94,6 +95,11 @@ def main(unused_argv):
 
   else:
     run_experiment.load_gin_configs(FLAGS.gin_files, FLAGS.gin_bindings)
+
+  if FLAGS.replay_last_day:
+    games_names = gin.query_parameter('MasterRunner.games_names')
+    games_names = games_names + [games_names[-1]]
+    gin.bind_parameter('MasterRunner.games_names', games_names)
 
   runner = llamn_run_experiment.MasterRunner(base_dir, not FLAGS.no_parallel)
   runner.run_experiment()
