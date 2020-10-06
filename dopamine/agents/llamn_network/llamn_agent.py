@@ -315,7 +315,7 @@ class AMNAgent:
 
   def _build_train_ops(self):
     if self.eval_mode:
-      return
+      return tf.no_op()
 
     train_ops = []
 

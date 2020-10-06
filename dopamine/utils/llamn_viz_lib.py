@@ -139,11 +139,9 @@ class MyLLAMNRunner(LLAMNRunner):
     self._start_iteration = 0
 
   def visualize(self, record_path, num_global_steps=500):
-    for self.ind_env in range(len(self._environments)):
 
-      self._agent.ind_expert = self.ind_env
-
-      game_name = self._name
+    for self._game_index in range(self._nb_envs):
+      game_name = self._names[self._game_index]
       game_record_path = os.path.join(record_path, game_name, "images")
       MyRunner.visualize(self, game_record_path, num_global_steps)
 
@@ -152,10 +150,10 @@ def create_expert(sess, environment, llamn_path, name, summary_writer=None):
   return MyExpertAgent(sess, num_actions=environment.action_space.n,
                        llamn_path=llamn_path, name=name)
 
-def run(phase, nb_day, games, nb_actions, num_steps, root_dir, config):
+
+def run(phase, nb_day, games, nb_actions, num_steps, root_dir):
   """Main entrypoint for running and generating visualizations"""
 
-  gin.parse_config(config)
   phase = phase + '_' + str(nb_day)
   phase_dir = os.path.join(root_dir, phase)
 

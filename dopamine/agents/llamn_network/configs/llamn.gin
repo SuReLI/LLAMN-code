@@ -46,6 +46,9 @@ ExpertAgent.replay_scheme = 'prioritized'
 ExpertAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 ExpertAgent.optimizer = @tf.train.AdamOptimizer()
 
+tf.train.AdamOptimizer.learning_rate = 0.0000625
+tf.train.AdamOptimizer.epsilon = 0.00015
+
 # AMN
 AMNAgent.feature_size = %feature_size
 AMNAgent.distributional_night = %distributional_night
