@@ -35,7 +35,6 @@ from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
 from dopamine.discrete_domains.llamn_run_experiment import ExpertRunner
 from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent, MyRunner
-import gin
 import numpy as np
 import tensorflow as tf
 

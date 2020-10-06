@@ -57,6 +57,12 @@ class AMNAgent:
                tf_device='/cpu:*',
                eval_mode=False,
                max_tf_checkpoints_to_keep=4,
+               optimizer=tf.compat.v1.train.RMSPropOptimizer(
+                   learning_rate=0.00025,
+                   decay=0.95,
+                   momentum=0.0,
+                   epsilon=0.00001,
+                   centered=True),
                summary_writer=None,
                summary_writing_frequency=500,
                allow_partial_reload=False):
@@ -65,6 +71,7 @@ class AMNAgent:
     logging.info('Creating %s agent with the following parameters:',
                  self.__class__.__name__)
     logging.info('\t tf_device: %s', tf_device)
+    logging.info('\t optimizer: %s', optimizer)
     logging.info('\t max_tf_checkpoints_to_keep: %d',
                  max_tf_checkpoints_to_keep)
 
@@ -108,10 +115,7 @@ class AMNAgent:
 
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
-    self.optimizers = [tf.compat.v1.train.AdamOptimizer(learning_rate=0.0000625,
-                                                        epsilon=0.00015,
-                                                        name='adam_'+str(i))
-                       for i in range(self.nb_experts)]
+    self.optimizer = optimizer
     self.summary_writer = summary_writer if not self.eval_mode else None
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
@@ -324,6 +328,9 @@ class AMNAgent:
     l2_losses = []
     total_losses = []
 
+    total_loss = 0
+    update_priorities_ops = []
+
     for i_task in range(self.nb_experts):
 
       xent_loss = self._build_xent_loss(i_task)
@@ -343,16 +350,15 @@ class AMNAgent:
         loss_weights = 1.0 / tf.sqrt(probs + 1e-10)
         loss_weights /= tf.reduce_max(loss_weights)
 
-        update_priorities_op = self._replays[i_task].tf_set_priority(
-            self._replays[i_task].indices, tf.sqrt(loss + 1e-10))
+        update_priorities_ops.append(self._replays[i_task].tf_set_priority(
+            self._replays[i_task].indices, tf.sqrt(loss + 1e-10)))
 
         loss = loss_weights * loss
 
       else:
-        update_priorities_op = tf.no_op()
+        update_priorities_ops.append(tf.no_op())
 
-      with tf.control_dependencies([update_priorities_op]):
-        train_ops.append(self.optimizers[i_task].minimize(tf.reduce_mean(loss)))
+      total_loss += tf.reduce_mean(loss)
 
     if self.summary_writer is not None:
       self.summaries = [[] for i in range(self.nb_experts)]
@@ -373,7 +379,10 @@ class AMNAgent:
               tf.compat.v1.summary.scalar(f'{game_name}/Total_loss', tf.reduce_mean(total_losses[i_task]))
           ]
 
-    return train_ops
+    with tf.control_dependencies(update_priorities_ops):
+      train_op = self.optimizer.minimize(tf.reduce_mean(total_loss))
+
+    return train_op
 
   def begin_episode(self, observation):
     self._reset_state()

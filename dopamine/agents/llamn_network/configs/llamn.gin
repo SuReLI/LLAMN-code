@@ -57,6 +57,7 @@ AMNAgent.expert_num_atoms = %num_atoms
 AMNAgent.expert_vmax = %vmax
 AMNAgent.update_horizon = %update_horizon
 AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+AMNAgent.optimizer = @tf.train.AdamOptimizer()
 
 # Replay Buffer
 WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
