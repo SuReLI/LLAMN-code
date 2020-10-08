@@ -63,6 +63,7 @@ class AMNAgent:
                    momentum=0.0,
                    epsilon=0.00001,
                    centered=True),
+               optimize_loss_sum=False,
                summary_writer=None,
                summary_writing_frequency=500,
                allow_partial_reload=False):
@@ -116,6 +117,7 @@ class AMNAgent:
     self.eval_mode = eval_mode
     self.training_steps_list = [0] * self.nb_experts
     self.optimizer = optimizer
+    self.optimize_loss_sum = optimize_loss_sum
     self.summary_writer = summary_writer if not self.eval_mode else None
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
@@ -135,7 +137,7 @@ class AMNAgent:
 
       self._build_networks()
 
-      self._train_op = tf.group(self._build_train_ops())
+      self._train_ops = self._build_train_ops()
 
       if self.summary_writer is not None:
         self._merged_summaries = [tf.compat.v1.summary.merge(s) for s in self.summaries]
@@ -169,6 +171,13 @@ class AMNAgent:
   @property
   def q_argmax(self):
     return self._net_q_argmax[self.ind_expert]
+
+  @property
+  def _train_op(self):
+    if self.optimize_loss_sum:
+      return self._train_ops[0]
+    else:
+      return self._train_ops[self.ind_expert]
 
   @property
   def training_steps(self):
@@ -321,8 +330,6 @@ class AMNAgent:
     if self.eval_mode:
       return tf.no_op()
 
-    train_ops = []
-
     ewc_loss = self._build_ewc_loss()
     xent_losses = []
     l2_losses = []
@@ -330,6 +337,7 @@ class AMNAgent:
 
     total_loss = 0
     update_priorities_ops = []
+    train_ops = []
 
     for i_task in range(self.nb_experts):
 
@@ -350,15 +358,21 @@ class AMNAgent:
         loss_weights = 1.0 / tf.sqrt(probs + 1e-10)
         loss_weights /= tf.reduce_max(loss_weights)
 
-        update_priorities_ops.append(self._replays[i_task].tf_set_priority(
-            self._replays[i_task].indices, tf.sqrt(loss + 1e-10)))
+        update_priorities_op = self._replays[i_task].tf_set_priority(
+            self._replays[i_task].indices, tf.sqrt(loss + 1e-10))
 
         loss = loss_weights * loss
 
       else:
-        update_priorities_ops.append(tf.no_op())
+        update_priorities_op = tf.no_op()
 
-      total_loss += tf.reduce_mean(loss)
+      if self.optimize_loss_sum:
+        update_priorities_ops.append(update_priorities_op)
+        total_loss += tf.reduce_mean(loss)
+
+      else:
+        with tf.control_dependencies([update_priorities_op]):
+          train_ops.append(self.optimizer.minimize(tf.reduce_mean(loss)))
 
     if self.summary_writer is not None:
       self.summaries = [[] for i in range(self.nb_experts)]
@@ -379,10 +393,13 @@ class AMNAgent:
               tf.compat.v1.summary.scalar(f'{game_name}/Total_loss', tf.reduce_mean(total_losses[i_task]))
           ]
 
-    with tf.control_dependencies(update_priorities_ops):
-      train_op = self.optimizer.minimize(tf.reduce_mean(total_loss))
+    if self.optimize_loss_sum:
+      with tf.control_dependencies(update_priorities_ops):
+        train_op = self.optimizer.minimize(tf.reduce_mean(total_loss))
+      return [train_op]
 
-    return train_op
+    else:
+      return train_ops
 
   def begin_episode(self, observation):
     self._reset_state()

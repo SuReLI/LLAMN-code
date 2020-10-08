@@ -12,21 +12,27 @@ MasterRunner.games_names = [['Pong', 'Breakout'], ['SpaceInvaders']]
 MasterRunner.sticky_actions = True
 
 # Runner
-Runner.num_iterations = 100
-Runner.training_steps = 250000
+Runner.num_iterations = 60
+Runner.training_steps = 50000
 Runner.max_steps_per_episode = 27000
 
-LLAMNRunner.num_iterations = 200
-LLAMNRunner.training_steps = 250000
+LLAMNRunner.num_iterations = 15
+LLAMNRunner.training_steps = 50000
 LLAMNRunner.max_steps_per_episode = 27000
 
 # Common Expert / LLAMN
 update_horizon = 3
-feature_size = 256
+feature_size = 512
 num_atoms = 51
 vmax = 10.
-expert_init_option = 1
+expert_init_option = 2
 distributional_night = True
+
+# Important 
+AMNAgent.replay_scheme = 'prioritized'   # Night PER
+AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
+LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
+                                         # Negative value means alternate episodes
 
 # Expert
 ExpertAgent.init_option = %expert_init_option

@@ -250,6 +250,7 @@ class LLAMNRunner(TrainRunner):
                logging_file_prefix='log',
                log_every_n=1,
                num_iterations=200,
+               nb_steps_per_steps=-1,
                training_steps=250000,
                max_steps_per_episode=27000):
     assert base_dir is not None
@@ -258,6 +259,7 @@ class LLAMNRunner(TrainRunner):
     self._logging_file_prefix = logging_file_prefix
     self._log_every_n = log_every_n
     self._num_iterations = num_iterations
+    self._nb_steps_per_steps = nb_steps_per_steps
     self._training_steps = training_steps
     self._max_steps_per_episode = max_steps_per_episode
     self._base_dir = base_dir
@@ -305,7 +307,7 @@ class LLAMNRunner(TrainRunner):
   def _environment(self):
     return self._environments[self._game_index]
 
-  def _run_one_phase(self, min_steps, statistics, run_mode_str):
+  def _run_one_phase_steps(self, min_steps, statistics, run_mode_str):
     step_count = [0] * self._nb_envs
     num_episodes = [0] * self._nb_envs
     sum_returns = [0.] * self._nb_envs
@@ -322,50 +324,88 @@ class LLAMNRunner(TrainRunner):
         if finished[self._game_index]:
           continue
 
-        # print("Running one step on ", self._environment.environment.game)
-        observation, reward, is_terminal = self._run_one_step(actions[self._game_index])
+        for _ in range(self._nb_steps_per_steps):
+          # print("Running one step on ", self._environment.environment.game)
+          observation, reward, is_terminal = self._run_one_step(actions[self._game_index])
 
-        total_reward[self._game_index] += reward
-        step_number[self._game_index] += 1
+          total_reward[self._game_index] += reward
+          step_number[self._game_index] += 1
 
-        # Perform reward clipping.
-        reward = np.clip(reward, -1, 1)
+          # Perform reward clipping.
+          reward = np.clip(reward, -1, 1)
 
-        # End of episode
-        if self._environment.game_over or step_number[self._game_index] == self._max_steps_per_episode:
-          num_episodes[self._game_index] += 1
-          step_count[self._game_index] += step_number[self._game_index]
-          sum_returns[self._game_index] += total_reward[self._game_index]
+          # End of episode
+          if self._environment.game_over or step_number[self._game_index] == self._max_steps_per_episode:
+            num_episodes[self._game_index] += 1
+            step_count[self._game_index] += step_number[self._game_index]
+            sum_returns[self._game_index] += total_reward[self._game_index]
 
-          name = self._names[self._game_index]
-          statistics.append({
-              '{}_{}_episode_lengths'.format(name, run_mode_str): step_number[self._game_index],
-              '{}_{}_episode_returns'.format(name, run_mode_str): total_reward[self._game_index]
-          })
+            name = self._names[self._game_index]
+            statistics.append({
+                '{}_{}_episode_lengths'.format(name, run_mode_str): step_number[self._game_index],
+                '{}_{}_episode_returns'.format(name, run_mode_str): total_reward[self._game_index]
+            })
 
-          sys.stdout.write('\t\tSteps executed on {}: {} '.format(name, step_count[self._game_index]) +
-                           'Episode length: {} '.format(step_number[self._game_index]) +
-                           'Return: {}\r'.format(total_reward[self._game_index]))
-          sys.stdout.flush()
+            sys.stdout.write('\t\tSteps executed on {}: {} '.format(name, step_count[self._game_index]) +
+                             'Episode length: {} '.format(step_number[self._game_index]) +
+                             'Return: {}\r'.format(total_reward[self._game_index]))
+            sys.stdout.flush()
 
-          step_number[self._game_index] = 0
-          total_reward[self._game_index] = 0
-          self._end_episode(reward)
+            step_number[self._game_index] = 0
+            total_reward[self._game_index] = 0
+            self._end_episode(reward)
 
-          if step_count[self._game_index] > min_steps:
-            finished[self._game_index] = True
+            if step_count[self._game_index] > min_steps:
+              finished[self._game_index] = True
+              break
+            else:
+              actions[self._game_index] = self._initialize_episode()
+
+          # Loss of a life
+          elif is_terminal:
+            self._agent.end_episode(reward)
+            actions[self._game_index] = self._agent.begin_episode(observation)
+
           else:
-            actions[self._game_index] = self._initialize_episode()
-
-        # Loss of a life
-        elif is_terminal:
-          self._agent.end_episode(reward)
-          actions[self._game_index] = self._agent.begin_episode(observation)
-
-        else:
-          actions[self._game_index] = self._agent.step(reward, observation)
+            actions[self._game_index] = self._agent.step(reward, observation)
 
     return step_count, sum_returns, num_episodes
+
+  def _run_one_phase_episodes(self, min_steps, statistics, run_mode_str):
+    step_count = [0] * self._nb_envs
+    num_episodes = [0] * self._nb_envs
+    sum_returns = [0.] * self._nb_envs
+
+    # Continue to run every environment while at least one didn't finish its steps
+    while min(step_count) < min_steps:
+      episode_length, episode_return = self._run_one_episode()
+
+      game_name = self._names[self._game_index]
+      statistics.append({
+          '{}_{}_episode_lengths'.format(game_name, run_mode_str): episode_length,
+          '{}_{}_episode_returns'.format(game_name, run_mode_str): episode_return
+      })
+      step_count[self._game_index] += episode_length
+      sum_returns[self._game_index] += episode_return
+      num_episodes[self._game_index] += 1
+      # We use sys.stdout.write instead of logging so as to flush frequently
+      # without generating a line break.
+      sys.stdout.write('\t\tSteps executed on {}: {} '.format(game_name, step_count[self._game_index]) +
+                       'Episode length: {} '.format(episode_length) +
+                       'Return: {}\r'.format(episode_return))
+      sys.stdout.flush()
+
+      self._game_index = (self._game_index + 1) % self._nb_envs
+
+    return step_count, sum_returns, num_episodes
+
+  def _run_one_phase(self, min_steps, statistics, run_mode_str):
+    # Run by episodes
+    if self._nb_steps_per_steps < 1:
+      return self._run_one_phase_episodes(min_steps, statistics, run_mode_str)
+    # Run by steps
+    else:
+      return self._run_one_phase_steps(min_steps, statistics, run_mode_str)
 
   def _run_train_phase(self, statistics):
     # Perform the training phase, during which the agent learns.
