@@ -1,0 +1,79 @@
+# Hyperparameters follow Hessel et al. (2018), except for sticky_actions,
+# which was False (not using sticky actions) in the original paper.
+import dopamine.agents.llamn_network.llamn_agent
+import dopamine.discrete_domains.llamn_game_lib
+import dopamine.discrete_domains.llamn_atari_lib
+import dopamine.discrete_domains.atari_lib
+import dopamine.discrete_domains.run_experiment
+import dopamine.replay_memory.prioritized_replay_buffer
+import gin.tf.external_configurables
+
+# Duckie
+MasterRunner.games_names = [['DuckieTown-v0', 'DuckieTown-v1'], ['DuckieTown-v2']]
+MasterRunner.sticky_actions = True
+
+# Runner
+Runner.num_iterations = 60
+Runner.training_steps = 50000
+Runner.max_steps_per_episode = 27000
+
+LLAMNRunner.num_iterations = 15
+LLAMNRunner.training_steps = 50000
+LLAMNRunner.max_steps_per_episode = 27000
+
+# Common Expert / LLAMN
+update_horizon = 3
+feature_size = 256
+num_atoms = 51
+vmax = 10.
+expert_init_option = 2
+distributional_night = True
+
+observation_shape = %llamn_game_lib.DUCKIE_OBSERVATION_SHAPE
+observation_dtype = %llamn_game_lib.DUCKIE_OBSERVATION_DTYPE
+
+
+# Important 
+AMNAgent.replay_scheme = 'prioritized'   # Night PER
+AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
+LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
+                                         # Negative value means alternate episodes
+
+# Expert
+ExpertAgent.observation_shape = %observation_shape
+ExpertAgent.observation_dtype = %observation_dtype
+ExpertAgent.init_option = %expert_init_option
+ExpertAgent.distributional_night = %distributional_night
+ExpertAgent.feature_size = %feature_size
+ExpertAgent.num_atoms = %num_atoms
+ExpertAgent.vmax = %vmax
+ExpertAgent.gamma = 0.99
+ExpertAgent.update_horizon = %update_horizon
+ExpertAgent.min_replay_history = 10  # agent steps
+ExpertAgent.update_period = 4
+ExpertAgent.target_update_period = 1000  # agent steps
+ExpertAgent.epsilon_train = 0.01
+ExpertAgent.epsilon_eval = 0.001
+ExpertAgent.epsilon_decay_period = 250000  # agent steps
+ExpertAgent.replay_scheme = 'prioritized'
+ExpertAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+ExpertAgent.optimizer = @tf.train.AdamOptimizer()
+
+tf.train.AdamOptimizer.learning_rate = 0.0000625
+tf.train.AdamOptimizer.epsilon = 0.00015
+
+# AMN
+AMNAgent.observation_shape = %observation_shape
+AMNAgent.observation_dtype = %observation_dtype
+AMNAgent.feature_size = %feature_size
+AMNAgent.distributional_night = %distributional_night
+AMNAgent.expert_init_option = %expert_init_option
+AMNAgent.expert_num_atoms = %num_atoms
+AMNAgent.expert_vmax = %vmax
+AMNAgent.update_horizon = %update_horizon
+AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+AMNAgent.optimizer = @tf.train.AdamOptimizer()
+
+# Replay Buffer
+WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
+WrappedPrioritizedReplayBuffer.batch_size = 32

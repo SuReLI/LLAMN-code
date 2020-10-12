@@ -317,8 +317,12 @@ class Runner(object):
       # Perform reward clipping.
       reward = np.clip(reward, -1, 1)
 
-      if (self._environment.game_over or
-          step_number == self._max_steps_per_episode):
+      if hasattr(self._environment, 'game_over'):
+        game_over = self._environment.game_over
+      else:
+        game_over = is_terminal
+
+      if game_over or step_number == self._max_steps_per_episode:
         # Stop the run loop once we reach the true end of episode.
         break
       elif is_terminal:

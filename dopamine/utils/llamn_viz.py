@@ -47,7 +47,7 @@ import gin
 from absl import app
 from absl import flags
 from dopamine.utils import llamn_viz_lib
-from dopamine.discrete_domains.llamn_atari_lib import Game
+from dopamine.discrete_domains.llamn_game_lib import create_game
 
 flags.DEFINE_string('root_dir', 'results/', 'Root directory.')
 flags.DEFINE_integer('num_steps', 2000, 'Number of steps to run.')
@@ -73,7 +73,7 @@ def main(_):
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
   games_names = gin.query_parameter('MasterRunner.games_names')
 
-  games = [[Game(game_name) for game_name in list_names]
+  games = [[create_game(game_name) for game_name in list_names]
            for list_names in games_names]
 
   nb_actions = max([game.num_actions for game_list in games

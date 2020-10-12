@@ -27,7 +27,7 @@ from multiprocessing import Process, Lock
 from absl import logging
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
-from dopamine.discrete_domains.llamn_atari_lib import Game
+from dopamine.discrete_domains.llamn_game_lib import create_game
 from dopamine.discrete_domains.run_experiment import TrainRunner
 
 import numpy as np
@@ -56,7 +56,7 @@ class MasterRunner:
     self.parallel = parallel
     self.sentinel = os.path.join(base_dir, 'progress')
 
-    self.games = [[Game(game_name, sticky_actions) for game_name in list_names]
+    self.games = [[create_game(game_name, sticky_actions) for game_name in list_names]
                   for list_names in games_names]
 
     self.max_num_actions = max([game.num_actions for game_list in self.games
@@ -334,8 +334,13 @@ class LLAMNRunner(TrainRunner):
           # Perform reward clipping.
           reward = np.clip(reward, -1, 1)
 
+          if hasattr(self._environment, 'game_over'):
+            game_over = self._environment.game_over
+          else:
+            game_over = is_terminal
+
           # End of episode
-          if self._environment.game_over or step_number[self._game_index] == self._max_steps_per_episode:
+          if game_over or step_number[self._game_index] == self._max_steps_per_episode:
             num_episodes[self._game_index] += 1
             step_count[self._game_index] += step_number[self._game_index]
             sum_returns[self._game_index] += total_reward[self._game_index]

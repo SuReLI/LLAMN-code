@@ -8,9 +8,6 @@ import collections
 import numpy as np
 import tensorflow as tf
 
-import gym
-from dopamine.discrete_domains.atari_lib import AtariPreprocessing
-
 
 ExpertNetworkType = collections.namedtuple(
     'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
@@ -18,65 +15,6 @@ AMNNetworkType = collections.namedtuple(
     'amn_network', ['pre_features', 'q_values', 'features'])
 AMNNetworkDistributionalType = collections.namedtuple(
     'amn_network', ['pre_features', 'q_values', 'probabilities', 'features'])
-
-
-def build_variant(variant):
-  if variant is None:        # No variant
-      return lambda image: image
-  elif variant == "VHFlip":
-      return lambda image: np.flip(image, (0, 1))
-  elif variant == "VFlip":
-      return lambda image: np.flip(image, 0)
-  elif variant == "HFlip":
-      return lambda image: np.flip(image, 1)
-  elif variant == "Noisy":
-      noise = np.random.normal(0, 3, (84, 84, 1)).astype(np.uint8)
-      return lambda image: image + noise
-  elif variant == "Negative":
-      return lambda image: (255 - image)
-  raise ValueError("Variant name invalid !")
-
-
-class ModifiedAtariPreprocessing(AtariPreprocessing):
-  def __init__(self, environment, variant):
-    self.variant = variant
-    self.process_variant = build_variant(variant)
-    super().__init__(environment)
-
-  def _pool_and_resize(self):
-    image = super()._pool_and_resize()
-    return self.process_variant(image)
-
-
-class Game:
-  variants = ('VHFlip', 'VFlip', 'HFlip', 'Noisy', 'Negative')
-
-  def __init__(self, game_name, sticky_actions=True):
-    self.variant = None
-    for variant in self.variants:
-        if game_name.endswith(variant):
-            gym_name = game_name[:-len(variant)]
-            self.variant = variant
-            break
-    else:
-      gym_name = game_name
-
-    self.name = game_name
-    self.version = 'v0' if sticky_actions else 'v4'
-
-    self.full_name = f'{gym_name}NoFrameskip-{self.version}'
-
-    env = gym.make(self.full_name)
-    self.num_actions = env.action_space.n
-
-    self.finished = False     # used for multiprocessing
-
-  def create(self):
-    return ModifiedAtariPreprocessing(gym.make(self.full_name).env,
-                                      self.variant)
-
-  def __repr__(self):
-    return self.name
 
 
 class ExpertNetwork(tf.keras.Model):
