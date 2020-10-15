@@ -444,7 +444,8 @@ class AMNAgent:
 
   def _train_step(self):
 
-    if self._replay.memory.add_count > self.min_replay_history:
+    min_memory_size = min([replay.memory.add_count for replay in self._replays])
+    if min_memory_size > self.min_replay_history:
       if self.training_steps % self.update_period == 0:
         self._sess.run(self._train_op)
         if (self.summary_writer is not None
