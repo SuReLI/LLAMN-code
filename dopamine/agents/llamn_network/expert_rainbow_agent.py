@@ -67,13 +67,13 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                vmax=10.,
                gamma=0.99,
                update_horizon=1,
-               min_replay_history=20000,
+               min_replay_history=10000,
                update_period=4,
                target_update_period=8000,
                epsilon_fn=dqn_agent.linearly_decaying_epsilon,
                epsilon_train=0.01,
                epsilon_eval=0.001,
-               epsilon_decay_period=250000,
+               epsilon_decay_period=25000,
                replay_scheme='prioritized',
                tf_device='/cpu:*',
                optimizer=tf.compat.v1.train.AdamOptimizer(
@@ -86,6 +86,9 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
     self.init_option = init_option
     self.feature_size = feature_size
     self.distributional_night = distributional_night
+
+    if self.llamn_path:
+      epsilon_fn = dqn_agent.identity_epsilon
 
     super().__init__(
         sess=sess,

@@ -8,7 +8,9 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-MasterRunner.games_names = [['Pong', 'Breakout'], ['SpaceInvaders']]
+MasterRunner.games_names = [['Pong', 'Breakout', 'VideoPinball', 'Carnival', 'SpaceInvaders'],
+                            ['Pong', 'Breakout', 'VideoPinball', 'Carnival', 'SpaceInvaders'],
+                            ['Pong', 'Breakout', 'VideoPinball', 'Carnival', 'SpaceInvaders']]
 MasterRunner.sticky_actions = True
 
 # Runner
@@ -30,7 +32,7 @@ distributional_night = True
 
 # Important 
 AMNAgent.replay_scheme = 'prioritized'   # Night PER
-AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
+AMNAgent.optimize_loss_sum = True        # Optimize losses independently or with sum
 LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
                                          # Negative value means alternate episodes
 
@@ -42,12 +44,12 @@ ExpertAgent.num_atoms = %num_atoms
 ExpertAgent.vmax = %vmax
 ExpertAgent.gamma = 0.99
 ExpertAgent.update_horizon = %update_horizon
-ExpertAgent.min_replay_history = 20000  # agent steps
+ExpertAgent.min_replay_history = 10000  # agent steps
 ExpertAgent.update_period = 4
 ExpertAgent.target_update_period = 8000  # agent steps
 ExpertAgent.epsilon_train = 0.01
 ExpertAgent.epsilon_eval = 0.001
-ExpertAgent.epsilon_decay_period = 250000  # agent steps
+ExpertAgent.epsilon_decay_period = 25000  # agent steps
 ExpertAgent.replay_scheme = 'prioritized'
 ExpertAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 ExpertAgent.optimizer = @tf.train.AdamOptimizer()
@@ -61,6 +63,10 @@ AMNAgent.distributional_night = %distributional_night
 AMNAgent.expert_init_option = %expert_init_option
 AMNAgent.expert_num_atoms = %num_atoms
 AMNAgent.expert_vmax = %vmax
+AMNAgent.min_replay_history = 1000  # agent steps
+AMNAgent.epsilon_train = 0.01
+AMNAgent.epsilon_eval = 0.001
+AMNAgent.epsilon_decay_period = 25000
 AMNAgent.update_horizon = %update_horizon
 AMNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 AMNAgent.optimizer = @tf.train.AdamOptimizer()
