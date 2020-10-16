@@ -46,10 +46,19 @@ import gin
 
 from absl import app
 from absl import flags
+from absl import logging
 from dopamine.utils import llamn_viz_lib
 from dopamine.discrete_domains.llamn_game_lib import create_game
 
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
+
 flags.DEFINE_string('root_dir', 'results/', 'Root directory.')
+flags.DEFINE_string('filter', '', 'Which subnetworks to test.', short_name='f')
+flags.DEFINE_string('exclude', '^$', 'Which subnetworks to not test.', short_name='e')
 flags.DEFINE_integer('num_steps', 2000, 'Number of steps to run.')
 
 FLAGS = flags.FLAGS
@@ -67,6 +76,7 @@ def get_expe_dir(root_dir):
 
 
 def main(_):
+  logging.get_absl_logger().disabled = True
   expe_dir = get_expe_dir(FLAGS.root_dir)
   print(f'\033[91mVisualizing networks in directory {expe_dir}\033[0m')
 
@@ -85,6 +95,8 @@ def main(_):
                         nb_day=day,
                         games=games,
                         nb_actions=nb_actions,
+                        name_filter=FLAGS.filter,
+                        name_exclude=FLAGS.exclude,
                         num_steps=FLAGS.num_steps,
                         root_dir=expe_dir)
 

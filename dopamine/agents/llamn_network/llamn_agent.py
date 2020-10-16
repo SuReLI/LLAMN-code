@@ -269,7 +269,6 @@ class AMNAgent:
     net_q_values = self.convnet(self.state_ph).q_values
 
     for i in range(self.nb_experts):
-      replay_state = self._replays[i].states
       expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
@@ -280,6 +279,8 @@ class AMNAgent:
 
       # Need experts only to compute the loss, no need when testing the policy
       if not self.eval_mode:
+        replay_state = self._replays[i].states
+
         net_output = self.convnet(replay_state)
         if not self.distributional_night:
           partial_q_values = tf.boolean_mask(net_output.q_values, expert_mask, axis=1)

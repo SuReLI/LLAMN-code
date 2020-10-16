@@ -23,7 +23,7 @@ flags.DEFINE_string('filter', '', 'Which subnetworks to test.', short_name='f')
 flags.DEFINE_string('exclude', '^$', 'Which subnetworks to not test.', short_name='e')
 flags.DEFINE_integer('num_eps', 3, 'Number of episodes to run.')
 flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
-flags.DEFINE_integer('delay', 100, 'Number of ms to wait between steps in the environment.')
+flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
 
 FLAGS = flags.FLAGS
 

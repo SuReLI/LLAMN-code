@@ -30,6 +30,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import re
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
@@ -45,6 +46,20 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
   def __init__(self, sess, num_actions, llamn_path, name, summary_writer=None):
     super().__init__(sess, num_actions, llamn_path, name, summary_writer=summary_writer)
     self.rewards = []
+
+  def _build_replay_buffer(self, *args, **kwargs):
+    pass
+
+  def _build_networks(self):
+    self.online_convnet = self._create_network(name='online')
+    self._net_outputs = self.online_convnet(self.state_ph)
+    self._q_argmax = tf.argmax(self._net_outputs.q_values, axis=1)[0]
+
+  def _build_train_op(self):
+    pass
+
+  def _build_sync_op(self):
+    pass
 
   def _load_llamn(self):
     # Don't load llamn because the weights are saved in the checkpoint and will be loaded
@@ -88,6 +103,9 @@ class MyLLAMNAgent(llamn_agent.AMNAgent):
   def load_networks(self):
     pass
 
+  def _build_replay_buffers(self):
+    pass
+
   @property
   def rewards(self):
     return self.reward_list[self.ind_expert]
@@ -128,6 +146,9 @@ class MyExpertRunner(ExpertRunner):
     self._start_iteration = 0
 
   def visualize(self, record_path, num_global_steps=500):
+    game_name = self._environment.environment.game.capitalize()
+    print('  \033[34m', game_name, '\033[0m', sep='')
+
     MyRunner.visualize(self, record_path, num_global_steps)
 
 
@@ -141,6 +162,9 @@ class MyLLAMNRunner(LLAMNRunner):
 
     for self._game_index in range(self._nb_envs):
       game_name = self._names[self._game_index]
+      print('  \033[34m', game_name, '\033[0m', sep='')
+
+      game_name = self._names[self._game_index]
       game_record_path = os.path.join(record_path, game_name, "images")
       MyRunner.visualize(self, game_record_path, num_global_steps)
 
@@ -150,13 +174,23 @@ def create_expert(sess, environment, llamn_path, name, summary_writer=None):
                        llamn_path=llamn_path, name=name)
 
 
-def run(phase, nb_day, games, nb_actions, num_steps, root_dir):
+def should_evaluate(phase, game, name_filter, name_exclude):
+  phase_game = os.path.join(phase, str(game))
+  return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
+
+
+def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_steps, root_dir):
   """Main entrypoint for running and generating visualizations"""
 
   phase = phase + '_' + str(nb_day)
   phase_dir = os.path.join(root_dir, phase)
 
+  games = list(filter(lambda game: should_evaluate(phase, game, name_filter, name_exclude), games))
+  if not games:
+    return
+
   if phase.startswith('day'):
+    print('\033[33mDay', nb_day, '\033[0m')
     for game in games:
       # llamn_path must be non-False if it's not the first day, but don't need to be
       # exact because we load from a checkpoint, not from a previous llamn network
@@ -167,6 +201,7 @@ def run(phase, nb_day, games, nb_actions, num_steps, root_dir):
       runner.visualize(image_dir, num_global_steps=num_steps)
 
   else:
+    print('\033[33mNight', nb_day, '\033[0m')
     base_dir = os.path.join(root_dir, 'agent_viz', phase)
 
     runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)

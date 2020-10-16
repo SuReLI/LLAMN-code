@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import os
 import re
+import time
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
@@ -15,6 +16,20 @@ import tensorflow as tf
 
 class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
+
+  def _build_replay_buffer(self, *args, **kwargs):
+    pass
+
+  def _build_networks(self):
+    self.online_convnet = self._create_network(name='online')
+    self._net_outputs = self.online_convnet(self.state_ph)
+    self._q_argmax = tf.argmax(self._net_outputs.q_values, axis=1)[0]
+
+  def _build_train_op(self):
+    pass
+
+  def _build_sync_op(self):
+    pass
 
   def _load_llamn(self):
     # Don't load llamn because the weights are saved in the checkpoint and will be loaded
@@ -44,6 +59,9 @@ class MyLLAMNAgent(llamn_agent.AMNAgent):
                           for i in range(self.nb_experts)]
     self.reward_list = [[] for _ in range(self.nb_experts)]
 
+  def _build_replay_buffers(self):
+    pass
+
   def load_networks(self):
     pass
 
@@ -63,25 +81,27 @@ class MyExpertRunner(ExpertRunner):
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
     self._environment.render('human')
+    time.sleep(self.delay / 1000)
     return outputs
 
   def evaluate(self, num_eps):
-    if not re.search(self.filter, self._base_dir, re.I) or \
-        re.search(self.exclude, self._base_dir, re.I):  # noqa: E125
-      return
-
     self._agent.eval_mode = True
+
+    game_name = self._environment.environment.game.capitalize()
+    print('  \033[34m', game_name, '\033[0m', sep='')
+
     total_steps = 0
     total_reward = 0
     for _ in range(num_eps):
       steps, reward = self._run_one_episode()
       total_steps += steps
       total_reward += reward
+      print("    Reward:", reward)
 
     self._environment.close()
-    game_name = self._environment.environment.game
-    print("\tMean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
-    print("\tMean number of steps:", total_steps / num_eps)
+    print("    ----------------")
+    print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
+    print("    Mean number of steps:", total_steps / num_eps)
 
 
 class MyLLAMNRunner(LLAMNRunner):
@@ -93,15 +113,13 @@ class MyLLAMNRunner(LLAMNRunner):
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
     self._environment.render('human')
+    time.sleep(self.delay / 1000)
     return outputs
 
   def evaluate(self, num_eps):
     for self._game_index in range(self._nb_envs):
       game_name = self._names[self._game_index]
-      name = os.path.join(self._base_dir, game_name)
-      if not re.search(self.filter, name, re.I) or \
-          re.search(self.exclude, name, re.I):  # noqa: E125
-        return
+      print('  \033[34m', game_name, '\033[0m', sep='')
 
       self._agent.eval_mode = True
       total_steps = 0
@@ -110,16 +128,23 @@ class MyLLAMNRunner(LLAMNRunner):
         steps, reward = self._run_one_episode()
         total_steps += steps
         total_reward += reward
+        print("    Reward:", reward)
 
       self._environment.close()
-      game_name = self._environment.environment.game
-      print("\tMean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
-      print("\tMean number of steps:", total_steps / num_eps)
+      game_name = self._environment.environment.game.capitalize()
+      print("    ----------------")
+      print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
+      print("    Mean number of steps:", total_steps / num_eps)
 
 
 def create_expert(sess, environment, llamn_path, name, summary_writer=None):
   return MyExpertAgent(sess, num_actions=environment.action_space.n,
                        llamn_path=llamn_path, name=name)
+
+
+def should_evaluate(phase, game, name_filter, name_exclude):
+  phase_game = os.path.join(phase, str(game))
+  return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 
 def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir):
@@ -128,19 +153,21 @@ def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, de
   phase = phase + '_' + str(nb_day)
   phase_dir = os.path.join(root_dir, phase)
 
+  games = list(filter(lambda game: should_evaluate(phase, game, name_filter, name_exclude), games))
+  if not games:
+    return
+
   if phase.startswith('day'):
+    print('\033[33mDay', nb_day, '\033[0m')
     for game in games:
-      print('\033[33mDay', nb_day, '\033[0m')
       # llamn_path must be non-False if it's not the first day, but don't need to be
       # exact because we load from a checkpoint, not from a previous llamn network
       runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
-      runner.filter = name_filter
-      runner.exclude = name_exclude
+      runner.delay = delay
       runner.evaluate(num_eps)
 
   else:
     print('\033[33mNight', nb_day, '\033[0m')
     runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)
-    runner.filter = name_filter
-    runner.exclude = name_exclude
+    runner.delay = delay
     runner.evaluate(num_eps)
