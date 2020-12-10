@@ -127,7 +127,7 @@ class AMNAgent:
 
     with tf.device(tf_device):
       self._build_experts()
-      self._build_prev_llamn()
+      # self._build_prev_llamn()
 
       # Create a placeholder for the state input to the AMN network.
       # The last axis indicates the number of consecutive frames stacked.
@@ -245,10 +245,13 @@ class AMNAgent:
       ckpt = tf.compat.v1.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
-      var_names = {var.name[5:-2]: var
-                   for var in self.previous_llamn.variables}
-      saver = tf.compat.v1.train.Saver(var_list=var_names)
+      saver = tf.compat.v1.train.Saver(var_list=self.convnet.variables)
       saver.restore(self._sess, ckpt_path)
+
+      # var_names = {var.name[5:-2]: var
+      #              for var in self.previous_llamn.variables}
+      # saver = tf.compat.v1.train.Saver(var_list=var_names)
+      # saver.restore(self._sess, ckpt_path)
 
   def _create_network(self):
     network = self.network(self.llamn_num_actions, self.llamn_num_atoms,
@@ -298,9 +301,9 @@ class AMNAgent:
         self._expert_q_distrib.append(tf.stop_gradient(expert_q_distrib))
         self._expert_features.append(tf.stop_gradient(expert_output.features))
 
-        if self.llamn_path:
-          llamn_output = self.previous_llamn(replay_state)
-          self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
+        # if self.llamn_path:
+          # llamn_output = self.previous_llamn(replay_state)
+          # self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
 
   def _build_xent_loss(self, i_task):
     expert_q_distrib = self._expert_q_distrib[i_task]

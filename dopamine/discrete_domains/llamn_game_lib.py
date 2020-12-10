@@ -15,7 +15,7 @@ from dopamine.discrete_domains.atari_lib import AtariPreprocessing
 
 
 gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_SHAPE', (60, 80))
-gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_DTYPE', tf.float64)
+gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_DTYPE', tf.uint8)
 
 
 def create_game(game_name, sticky_actions=True):
