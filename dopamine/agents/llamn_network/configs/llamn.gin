@@ -32,6 +32,7 @@ distributional_night = True
 
 # Important 
 AMNAgent.replay_scheme = 'prioritized'   # Night PER
+AMNAgent.llamn_init_copy = True          # Copy weights of AMN between nights
 AMNAgent.optimize_loss_sum = True        # Optimize losses independently or with sum
 LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
                                          # Negative value means alternate episodes

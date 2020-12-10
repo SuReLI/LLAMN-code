@@ -52,6 +52,7 @@ class AMNAgent:
                replay_scheme='prioritized',
                distributional_night=False,
                expert_init_option=1,
+               llamn_init_copy=False,
                expert_num_atoms=51,
                expert_vmax=10,
                tf_device='/cpu:*',
@@ -85,6 +86,7 @@ class AMNAgent:
     self.nb_experts = len(expert_num_actions)
     self.llamn_path = llamn_path
     self.expert_init_option = expert_init_option
+    self.llamn_init_copy = llamn_init_copy
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
 
@@ -241,7 +243,7 @@ class AMNAgent:
       saver = tf.compat.v1.train.Saver(var_list=expert.variables)
       saver.restore(self._sess, ckpt_path)
 
-    if self.llamn_path:
+    if self.llamn_path and self.llamn_init_copy:
       ckpt = tf.compat.v1.train.get_checkpoint_state(self.llamn_path + "/checkpoints")
       ckpt_path = ckpt.model_checkpoint_path
 
