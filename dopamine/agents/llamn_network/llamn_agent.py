@@ -106,6 +106,7 @@ class AMNAgent:
     self.epsilon_decay_period = epsilon_decay_period
     self.replay_scheme = replay_scheme
     self.update_period = update_period
+    self.buffer_loaded = False
 
     if llamn_init_copy:
       self.epsilon_fn = dqn_agent.identity_epsilon
@@ -257,6 +258,17 @@ class AMNAgent:
       #              for var in self.previous_llamn.variables}
       # saver = tf.compat.v1.train.Saver(var_list=var_names)
       # saver.restore(self._sess, ckpt_path)
+
+
+  def load_buffers(self):
+    if not self.eval_mode and self.llamn_path:
+      self.buffer_loaded = True
+      for i in range(self.nb_experts):
+        path = self.expert_paths[i] + "/checkpoints"
+
+        ckpt = tf.compat.v1.train.get_checkpoint_state(path)
+        iteration_number = int(ckpt.model_checkpoint_path.rsplit('-', 1)[1])
+        self._replays[i].load(path, iteration_number)
 
   def _create_network(self):
     network = self.network(self.llamn_num_actions, self.llamn_num_atoms,
@@ -456,7 +468,7 @@ class AMNAgent:
     return min_memory_size > self.min_replay_history
 
   def _train_step(self):
-    if self._is_buffer_prefilled():
+    if self.buffer_loaded or self._is_buffer_prefilled():
       if self.training_steps % self.update_period == 0:
         self._sess.run(self._train_op)
         if (self.summary_writer is not None

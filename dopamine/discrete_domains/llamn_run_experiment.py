@@ -252,7 +252,8 @@ class LLAMNRunner(TrainRunner):
                num_iterations=200,
                nb_steps_per_steps=-1,
                training_steps=250000,
-               max_steps_per_episode=27000):
+               max_steps_per_episode=27000,
+               buffer_prefill=None):
     assert base_dir is not None
     tf.compat.v1.disable_v2_behavior()
 
@@ -265,6 +266,7 @@ class LLAMNRunner(TrainRunner):
     self._base_dir = base_dir
     self._create_directories()
     self._summary_writer = tf.compat.v1.summary.FileWriter(self._base_dir)
+    self.buffer_prefill = buffer_prefill
 
     index = int(base_dir.rsplit('_', 1)[1])
     if index > 0:
@@ -294,6 +296,10 @@ class LLAMNRunner(TrainRunner):
     self._initialize_checkpointer_and_maybe_resume(checkpoint_file_prefix)
 
     self._agent.load_networks()
+
+    if self.buffer_prefill == "copy":
+      self._agent.load_buffers()
+
 
   @property
   def _game_index(self):
@@ -459,7 +465,8 @@ class LLAMNRunner(TrainRunner):
                       self._num_iterations, self._start_iteration)
       return
 
-    self._prefill_buffers()
+    if self.buffer_prefill == "exploration":
+      self._prefill_buffers()
 
     for iteration in range(self._start_iteration, self._num_iterations):
       statistics = self._run_one_iteration(iteration)
