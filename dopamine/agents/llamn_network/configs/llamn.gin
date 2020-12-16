@@ -33,7 +33,7 @@ distributional_night = True
 # Important 
 AMNAgent.replay_scheme = 'prioritized'   # Night PER
 AMNAgent.llamn_init_copy = True          # Copy weights of AMN between nights
-AMNAgent.optimize_loss_sum = True        # Optimize losses independently or with sum
+AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
 LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
                                          # Negative value means alternate episodes
 
@@ -64,7 +64,7 @@ AMNAgent.distributional_night = %distributional_night
 AMNAgent.expert_init_option = %expert_init_option
 AMNAgent.expert_num_atoms = %num_atoms
 AMNAgent.expert_vmax = %vmax
-AMNAgent.min_replay_history = 1000  # agent steps
+AMNAgent.min_replay_history = 10000  # agent steps
 AMNAgent.epsilon_train = 0.01
 AMNAgent.epsilon_eval = 0.001
 AMNAgent.epsilon_decay_period = 25000

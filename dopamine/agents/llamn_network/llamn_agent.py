@@ -107,6 +107,9 @@ class AMNAgent:
     self.replay_scheme = replay_scheme
     self.update_period = update_period
 
+    if llamn_init_copy:
+      self.epsilon_fn = dqn_agent.identity_epsilon
+
     # Expert parameters
     self.expert_num_atoms = expert_num_atoms
     self.expert_support = tf.linspace(-expert_vmax, expert_vmax, expert_num_atoms)
@@ -448,10 +451,12 @@ class AMNAgent:
     else:
       return self._sess.run(self.q_argmax, {self.state_ph: self.state})
 
-  def _train_step(self):
-
+  def _is_buffer_prefilled(self):
     min_memory_size = min([replay.memory.add_count for replay in self._replays])
-    if min_memory_size > self.min_replay_history:
+    return min_memory_size > self.min_replay_history
+
+  def _train_step(self):
+    if self._is_buffer_prefilled():
       if self.training_steps % self.update_period == 0:
         self._sess.run(self._train_op)
         if (self.summary_writer is not None

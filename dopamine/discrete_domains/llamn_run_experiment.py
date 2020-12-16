@@ -307,6 +307,14 @@ class LLAMNRunner(TrainRunner):
   def _environment(self):
     return self._environments[self._game_index]
 
+  def _prefill_buffers(self):
+    self._agent.eval_mode = False
+    sys.stdout.write('\tPre-filling buffers...\n')
+    while not self._agent._is_buffer_prefilled():
+      self._run_one_episode()
+      self._game_index = (self._game_index + 1) % self._nb_envs
+    sys.stdout.write('\tDone !\n')
+
   def _run_one_phase_steps(self, min_steps, statistics, run_mode_str):
     step_count = [0] * self._nb_envs
     num_episodes = [0] * self._nb_envs
@@ -442,6 +450,22 @@ class LLAMNRunner(TrainRunner):
     logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
     super()._run_one_iteration(iteration)
+
+  def run_experiment(self):
+    """Runs a full experiment, spread over multiple iterations."""
+    logging.info('Beginning training...')
+    if self._num_iterations <= self._start_iteration:
+      logging.warning('num_iterations (%d) < start_iteration(%d)',
+                      self._num_iterations, self._start_iteration)
+      return
+
+    self._prefill_buffers()
+
+    for iteration in range(self._start_iteration, self._num_iterations):
+      statistics = self._run_one_iteration(iteration)
+      self._log_experiment(iteration, statistics)
+      if iteration > 0 and iteration % 10 == 0 or iteration == self._num_iterations-1:
+        self._checkpoint_experiment(iteration)
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
