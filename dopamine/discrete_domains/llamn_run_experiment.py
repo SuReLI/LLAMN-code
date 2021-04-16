@@ -300,7 +300,6 @@ class LLAMNRunner(TrainRunner):
     if self.buffer_prefill == "copy":
       self._agent.load_buffers()
 
-
   @property
   def _game_index(self):
     return self._agent.ind_expert
