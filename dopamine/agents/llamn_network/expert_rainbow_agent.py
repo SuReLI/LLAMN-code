@@ -43,7 +43,7 @@ from dopamine.agents.dqn import dqn_agent
 from dopamine.agents.rainbow import rainbow_agent
 from dopamine.discrete_domains import llamn_atari_lib
 import tensorflow as tf
-
+from tensorflow.python.training import py_checkpoint_reader
 import gin.tf
 
 
@@ -150,7 +150,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
         # The LLAMN usually has more outputs than the expert (= the maximum number of
         # actions over every possible tasks), so we have to manually truncate the llamn
         # weights and assign them to the expert's
-        weight_reader = tf.python.training.py_checkpoint_reader.NewCheckpointReader(ckpt_path)
+        weight_reader = py_checkpoint_reader.NewCheckpointReader(ckpt_path)
         llamn_kernel = weight_reader.get_tensor('llamn/dense_out/kernel')
         llamn_bias = weight_reader.get_tensor('llamn/dense_out/bias')
 

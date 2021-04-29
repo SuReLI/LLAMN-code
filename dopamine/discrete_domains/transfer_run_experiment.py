@@ -24,6 +24,7 @@ from multiprocessing import Process
 from absl import logging
 
 import tensorflow as tf
+from tensorflow.python.training import py_checkpoint_reader
 import gin.tf
 
 from dopamine.discrete_domains.run_experiment import TrainRunner, create_agent
@@ -36,21 +37,12 @@ def load_expert(self, ckpt_dir, nb_layers=4, soft_fix=False):
   ckpt = tf.compat.v1.train.get_checkpoint_state(os.path.join(ckpt_dir, "checkpoints"))
   ckpt_path = ckpt.model_checkpoint_path
 
-  if nb_layers == 5:
-    prev_layers = tf.train.list_variables(ckpt_path)
-    prev_output_size = [layer[1] for layer in prev_layers if layer[0] == 'online/fully_connected_1/bias'][0][0]
-    output_size = self._agent.online_convnet.variables[-1].shape.dims[0].value
-    if prev_output_size != output_size:
-      if not soft_fix:
-        raise Exception("Can't transfer last layer if it's not the same size !")
-      else:
-        game_name = self._environment.environment.game.capitalize()
-        print(f"\033[91mWARNING: can't transfer last layer to {game_name} because"
-              " action size is not the same size.\033[0m\n"
-              "Soft fix is on, so falling back to transferring only first 4 layers")
-        nb_layers = 4
+  prev_layers = tf.train.list_variables(ckpt_path)
+  prev_output_size = [layer[1] for layer in prev_layers if layer[0] == 'online/fully_connected_1/bias'][0][0]
+  output_size = self._agent.online_convnet.variables[-1].shape.dims[0].value
 
-  layer_names = ('Conv', 'Conv_1', 'Conv_2', 'fully_connected', 'fully_connected_1')
+  # Restore layers except the output one
+  layer_names = ('Conv', 'Conv_1', 'Conv_2', 'fully_connected')
   filter_fn = lambda s: any((f'/{layer}/' in s for layer in layer_names[:nb_layers]))
 
   var_names = {'online/'+var.name.split('/', 1)[1][:-2]: var
@@ -59,6 +51,25 @@ def load_expert(self, ckpt_dir, nb_layers=4, soft_fix=False):
 
   saver = tf.compat.v1.train.Saver(var_list=var_names)
   saver.restore(self._sess, ckpt_path)
+
+  if nb_layers == 5 and prev_output_size != output_size:
+    var_names = {'online/'+var.name.split('/', 1)[1][:-2]: var
+                 for var in self._agent.online_convnet.variables
+                 if '/fully_connected_1/' in var.name}
+    weight_reader = py_checkpoint_reader.NewCheckpointReader(ckpt_path)
+    prev_kernel = weight_reader.get_tensor('online/fully_connected_1/kernel')
+    prev_bias = weight_reader.get_tensor('online/fully_connected_1/bias')
+
+    agent_kernel, agent_bias = self._agent.online_convnet.variables[-2:]
+
+    if prev_output_size < output_size:
+      assign_kernel_op = agent_kernel[:, :prev_output_size].assign(prev_kernel)
+      assign_bias_op = agent_bias[:prev_output_size].assign(prev_bias)
+    else:
+      assign_kernel_op = agent_kernel.assign(prev_kernel[:, :output_size])
+      assign_bias_op = agent_bias.assign(prev_bias[:output_size])
+
+    self._sess.run([assign_kernel_op, assign_bias_op])
 
   self._sess.run(self._agent._sync_qt_ops)
 
