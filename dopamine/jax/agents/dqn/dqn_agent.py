@@ -19,16 +19,22 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import copy
 import functools
+import inspect
 import math
+import time
 
 from absl import logging
 
 from dopamine.agents.dqn import dqn_agent
+from dopamine.jax import losses
 from dopamine.jax import networks
 from dopamine.replay_memory import circular_replay_buffer
-from flax import nn
+from dopamine.replay_memory import prioritized_replay_buffer
+from flax import core
 from flax import optim
+from flax.training import checkpoints
 import gin
 import jax
 import jax.numpy as jnp
@@ -39,14 +45,15 @@ import tensorflow as tf
 NATURE_DQN_OBSERVATION_SHAPE = dqn_agent.NATURE_DQN_OBSERVATION_SHAPE
 NATURE_DQN_DTYPE = jnp.uint8
 NATURE_DQN_STACK_SIZE = dqn_agent.NATURE_DQN_STACK_SIZE
+identity_epsilon = dqn_agent.identity_epsilon
 
 
 @gin.configurable
 def create_optimizer(name='adam', learning_rate=6.25e-5, beta1=0.9, beta2=0.999,
-                     eps=1.5e-4):
+                     eps=1.5e-4, centered=False):
   """Create an optimizer for training.
 
-  Currently, only the Adam optimizer is supported.
+  Currently, only the Adam and RMSProp optimizers are supported.
 
   Args:
     name: str, name of the optimizer to create.
@@ -54,44 +61,51 @@ def create_optimizer(name='adam', learning_rate=6.25e-5, beta1=0.9, beta2=0.999,
     beta1: float, beta1 parameter for the optimizer.
     beta2: float, beta2 parameter for the optimizer.
     eps: float, epsilon parameter for the optimizer.
+    centered: bool, centered parameter for RMSProp.
 
   Returns:
     A flax optimizer.
   """
   if name == 'adam':
+    logging.info('Creating Adam optimizer with settings lr=%f, beta1=%f, '
+                 'beta2=%f, eps=%f', learning_rate, beta1, beta2, eps)
     return optim.Adam(
         learning_rate=learning_rate, beta1=beta1, beta2=beta2, eps=eps)
   elif name == 'rmsprop':
-    raise ValueError(
-        'RMSProp is not an available optimizer in the Flax library.')
+    logging.info('Creating RMSProp optimizer with settings lr=%f, beta2=%f, '
+                 'eps=%f', learning_rate, beta2, eps)
+    return optim.RMSProp(learning_rate=learning_rate, beta2=beta2, eps=eps,
+                         centered=centered)
   else:
     raise ValueError('Unsupported optimizer {}'.format(name))
 
 
-def huber_loss(targets, predictions, delta=1.0):
-  x = jnp.abs(targets - predictions)
-  return jnp.where(x <= delta,
-                   0.5 * x**2,
-                   0.5 * delta**2 + delta * (x - delta))
-
-
-@functools.partial(jax.jit, static_argnums=(7))
-def train(target_network, optimizer, states, actions, next_states, rewards,
-          terminals, cumulative_gamma):
+@functools.partial(jax.jit, static_argnums=(0, 8, 9))
+def train(network_def, target_params, optimizer, states, actions, next_states,
+          rewards, terminals, cumulative_gamma, loss_type='huber'):
   """Run the training step."""
-  def loss_fn(model, target):
-    q_values = jax.vmap(model, in_axes=(0))(states).q_values
+  online_params = optimizer.target
+  def loss_fn(params, target):
+    def q_online(state):
+      return network_def.apply(params, state)
+
+    q_values = jax.vmap(q_online)(states).q_values
     q_values = jnp.squeeze(q_values)
     replay_chosen_q = jax.vmap(lambda x, y: x[y])(q_values, actions)
-    loss = jnp.mean(jax.vmap(huber_loss)(target, replay_chosen_q))
-    return loss
-  grad_fn = jax.value_and_grad(loss_fn)
-  target = target_q(target_network,
+    if loss_type == 'huber':
+      return jnp.mean(jax.vmap(losses.huber_loss)(target, replay_chosen_q))
+    return jnp.mean(jax.vmap(losses.mse_loss)(target, replay_chosen_q))
+
+  def q_target(state):
+    return network_def.apply(target_params, state)
+
+  target = target_q(q_target,
                     next_states,
                     rewards,
                     terminals,
                     cumulative_gamma)
-  loss, grad = grad_fn(optimizer.target, target)
+  grad_fn = jax.value_and_grad(loss_fn)
+  loss, grad = grad_fn(online_params, target)
   optimizer = optimizer.apply_gradient(grad)
   return optimizer, loss
 
@@ -112,6 +126,7 @@ def target_q(target_network, next_states, rewards, terminals, cumulative_gamma):
                                (1. - terminals))
 
 
+@gin.configurable
 @functools.partial(jax.jit, static_argnums=(0, 2, 3))
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
   """Returns the current epsilon for the agent's epsilon-greedy policy.
@@ -137,8 +152,8 @@ def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
   return epsilon + bonus
 
 
-@functools.partial(jax.jit, static_argnums=(3, 4, 5, 6, 7, 9, 10))
-def select_action(network, state, rng, num_actions, eval_mode,
+@functools.partial(jax.jit, static_argnums=(0, 4, 5, 6, 7, 8, 10, 11))
+def select_action(network_def, params, state, rng, num_actions, eval_mode,
                   epsilon_eval, epsilon_train, epsilon_decay_period,
                   training_steps, min_replay_history, epsilon_fn):
   """Select an action from the set of available actions.
@@ -147,7 +162,8 @@ def select_action(network, state, rng, num_actions, eval_mode,
   otherwise acts greedily according to the current Q-value estimates.
 
   Args:
-    network: Jax Module to use for inference.
+    network_def: Linen Module to use for inference.
+    params: Linen params (frozen dict) to use for inference.
     state: input state to use for inference.
     rng: Jax random number generator.
     num_actions: int, number of actions (static_argnum).
@@ -176,7 +192,7 @@ def select_action(network, state, rng, num_actions, eval_mode,
   p = jax.random.uniform(rng1)
   return rng, jnp.where(p <= epsilon,
                         jax.random.randint(rng2, (), 0, num_actions),
-                        jnp.argmax(network(state).q_values, axis=1)[0])
+                        jnp.argmax(network_def.apply(params, state).q_values))
 
 
 @gin.configurable
@@ -203,14 +219,15 @@ class JaxDQNAgent(object):
                optimizer='adam',
                summary_writer=None,
                summary_writing_frequency=500,
-               allow_partial_reload=False):
+               allow_partial_reload=False,
+               seed=None,
+               loss_type='huber'):
     """Initializes the agent and constructs the necessary components.
 
-    Note: Jax does not provide an implementation of RMSProp, so we are using
-          the Adam optimizer. This optimizer choice means the JAX DQN agent
-          differs from the original NatureDQN and the dopamine TensorFlow
-          version. However, in the experiments we have ran, we have found that
-          using Adam yields improved training performance.
+    Note: We are using the Adam optimizer by default for JaxDQN, which differs
+          from the original NatureDQN and the dopamine TensorFlow version. In
+          the experiments we have ran, we have found that using Adam yields
+          improved training performance.
 
     Args:
       num_actions: int, number of actions the agent can take at any state.
@@ -241,8 +258,12 @@ class JaxDQNAgent(object):
         written. Lower values will result in slower training.
       allow_partial_reload: bool, whether we allow reloading a partial agent
         (for instance, only the network parameters).
+      seed: int, a seed for DQN's internal RNG, used for initialization and
+        sampling actions. If None, will use the current time in nanoseconds.
+      loss_type: str, whether to use Huber or MSE loss during training.
     """
     assert isinstance(observation_shape, tuple)
+    seed = int(time.time() * 1e6) if seed is None else seed
     logging.info('Creating %s agent with the following parameters:',
                  self.__class__.__name__)
     logging.info('\t gamma: %f', gamma)
@@ -256,12 +277,14 @@ class JaxDQNAgent(object):
     logging.info('\t optimizer: %s', optimizer)
     logging.info('\t max_tf_checkpoints_to_keep: %d',
                  max_tf_checkpoints_to_keep)
+    logging.info('\t seed: %d', seed)
+    logging.info('\t loss_type: %s', loss_type)
 
     self.num_actions = num_actions
     self.observation_shape = tuple(observation_shape)
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
-    self.network = network.partial(num_actions=num_actions)
+    self.network_def = network(num_actions=num_actions)
     self.gamma = gamma
     self.update_horizon = update_horizon
     self.cumulative_gamma = math.pow(gamma, update_horizon)
@@ -277,8 +300,9 @@ class JaxDQNAgent(object):
     self.summary_writer = summary_writer
     self.summary_writing_frequency = summary_writing_frequency
     self.allow_partial_reload = allow_partial_reload
+    self._loss_type = loss_type
 
-    self._rng = jax.random.PRNGKey(0)
+    self._rng = jax.random.PRNGKey(seed)
     state_shape = self.observation_shape + (stack_size,)
     self.state = onp.zeros(state_shape)
     self._replay = self._build_replay_buffer()
@@ -290,29 +314,16 @@ class JaxDQNAgent(object):
     self._observation = None
     self._last_observation = None
 
-  def _create_network(self, name):
-    """Builds the convolutional network used to compute the agent's Q-values.
-
-    Args:
-      name: str, this name is passed to the Jax Module.
-
-    Returns:
-      network: Jax Model, the network instantiated by Jax.
-    """
-    _, initial_params = self.network.init(self._rng, name=name,
-                                          x=self.state,
-                                          num_actions=self.num_actions)
-    return nn.Model(self.network, initial_params)
-
   def _build_networks_and_optimizer(self):
-    online_network = self._create_network(name='Online')
+    self._rng, rng = jax.random.split(self._rng)
+    online_network_params = self.network_def.init(rng, x=self.state)
     optimizer_def = create_optimizer(self._optimizer_name)
-    self.optimizer = optimizer_def.create(online_network)
-    self.target_network = self._create_network(name='Target')
+    self.optimizer = optimizer_def.create(online_network_params)
+    self.target_network_params = copy.deepcopy(online_network_params)
 
   @property
-  def online_network(self):
-    # We set up this symlink to use the model that is being updated by the
+  def online_params(self):
+    # We set up this symlink to use the params that are being updated by the
     # optimizer.
     return self.optimizer.target
 
@@ -333,9 +344,8 @@ class JaxDQNAgent(object):
       self.replay_elements[element_type.name] = element
 
   def _sync_weights(self):
-    """Syncs the target_network weights with the online_network weights."""
-    self.target_network = self.target_network.replace(
-        params=self.online_network.params)
+    """Syncs the target_network_params with online_params."""
+    self.target_network_params = self.online_params
 
   def _reset_state(self):
     """Resets the agent state by filling it with zeros."""
@@ -372,7 +382,8 @@ class JaxDQNAgent(object):
     if not self.eval_mode:
       self._train_step()
 
-    self._rng, self.action = select_action(self.online_network,
+    self._rng, self.action = select_action(self.network_def,
+                                           self.online_params,
                                            self.state,
                                            self._rng,
                                            self.num_actions,
@@ -406,7 +417,8 @@ class JaxDQNAgent(object):
       self._store_transition(self._last_observation, self.action, reward, False)
       self._train_step()
 
-    self._rng, self.action = select_action(self.online_network,
+    self._rng, self.action = select_action(self.network_def,
+                                           self.online_params,
                                            self.state,
                                            self._rng,
                                            self.num_actions,
@@ -420,7 +432,7 @@ class JaxDQNAgent(object):
     self.action = onp.asarray(self.action)
     return self.action
 
-  def end_episode(self, reward):
+  def end_episode(self, reward, terminal=True):
     """Signals the end of the episode to the agent.
 
     We store the observation of the current time step, which is the last
@@ -428,9 +440,17 @@ class JaxDQNAgent(object):
 
     Args:
       reward: float, the last reward from the environment.
+      terminal: bool, whether the last state-action led to a terminal state.
     """
     if not self.eval_mode:
-      self._store_transition(self._observation, self.action, reward, True)
+      argspec = inspect.getfullargspec(self._store_transition)
+      if 'episode_end' in argspec.args or 'episode_end' in argspec.kwonlyargs:
+        self._store_transition(
+            self._observation, self.action, reward, terminal, episode_end=True)
+      else:
+        logging.warning(
+            '_store_transition function doesn\'t have episode_end arg.')
+        self._store_transition(self._observation, self.action, reward, terminal)
 
   def _train_step(self):
     """Runs a single training step.
@@ -439,46 +459,82 @@ class JaxDQNAgent(object):
       (1) A minimum number of frames have been added to the replay buffer.
       (2) `training_steps` is a multiple of `update_period`.
 
-    Also, syncs weights from online_network to target_network if training steps
-    is a multiple of target update period.
+    Also, syncs weights from online_params to target_network_params if training
+    steps is a multiple of target update period.
     """
     # Run a train op at the rate of self.update_period if enough training steps
     # have been run. This matches the Nature DQN behaviour.
     if self._replay.add_count > self.min_replay_history:
       if self.training_steps % self.update_period == 0:
         self._sample_from_replay_buffer()
-        self.optimizer, loss = train(self.target_network,
+        self.optimizer, loss = train(self.network_def,
+                                     self.target_network_params,
                                      self.optimizer,
                                      self.replay_elements['state'],
                                      self.replay_elements['action'],
                                      self.replay_elements['next_state'],
                                      self.replay_elements['reward'],
                                      self.replay_elements['terminal'],
-                                     self.cumulative_gamma)
+                                     self.cumulative_gamma,
+                                     self._loss_type)
         if (self.summary_writer is not None and
             self.training_steps > 0 and
             self.training_steps % self.summary_writing_frequency == 0):
           summary = tf.compat.v1.Summary(value=[
               tf.compat.v1.Summary.Value(tag='HuberLoss', simple_value=loss)])
           self.summary_writer.add_summary(summary, self.training_steps)
+          self.summary_writer.flush()
       if self.training_steps % self.target_update_period == 0:
         self._sync_weights()
 
     self.training_steps += 1
 
-  def _store_transition(self, last_observation, action, reward, is_terminal):
-    """Stores an experienced transition.
+  def _store_transition(self,
+                        last_observation,
+                        action,
+                        reward,
+                        is_terminal,
+                        *args,
+                        priority=None,
+                        episode_end=False):
+    """Stores a transition when in training mode.
 
-    Pedantically speaking, this does not actually store an entire transition
-    since the next state is recorded on the following time step.
+    Stores the following tuple in the replay buffer (last_observation, action,
+    reward, is_terminal, priority).
 
     Args:
-      last_observation: numpy array, last observation.
-      action: int, the action taken.
-      reward: float, the reward.
-      is_terminal: bool, indicating if the current state is a terminal state.
+      last_observation: Last observation, type determined via observation_type
+        parameter in the replay_memory constructor.
+      action: An integer, the action taken.
+      reward: A float, the reward.
+      is_terminal: Boolean indicating if the current state is a terminal state.
+      *args: Any, other items to be added to the replay buffer.
+      priority: Float. Priority of sampling the transition. If None, the default
+        priority will be used. If replay scheme is uniform, the default priority
+        is 1. If the replay scheme is prioritized, the default priority is the
+        maximum ever seen [Schaul et al., 2015].
+      episode_end: bool, whether this transition is the last for the episode.
+        This can be different than terminal when ending the episode because
+        of a timeout, for example.
     """
-    self._replay.add(last_observation, action, reward, is_terminal)
+    is_prioritized = isinstance(
+        self._replay,
+        prioritized_replay_buffer.OutOfGraphPrioritizedReplayBuffer)
+    if is_prioritized and priority is None:
+      if self._replay_scheme == 'uniform':
+        priority = 1.
+      else:
+        priority = self._replay.sum_tree.max_recorded_priority
+
+    if not self.eval_mode:
+      self._replay.add(
+          last_observation,
+          action,
+          reward,
+          is_terminal,
+          *args,
+          priority=priority,
+          episode_end=episode_end)
 
   def bundle_and_checkpoint(self, checkpoint_dir, iteration_number):
     """Returns a self-contained bundle of the agent's state.
@@ -503,8 +559,8 @@ class JaxDQNAgent(object):
     bundle_dictionary = {
         'state': self.state,
         'training_steps': self.training_steps,
-        'online_params': self.online_network.params,
-        'target_params': self.target_network.params
+        'online_params': self.online_params,
+        'target_params': self.target_network_params
     }
     return bundle_dictionary
 
@@ -538,13 +594,21 @@ class JaxDQNAgent(object):
     if bundle_dictionary is not None:
       self.state = bundle_dictionary['state']
       self.training_steps = bundle_dictionary['training_steps']
-      online_network = self.online_network.replace(
-          params=bundle_dictionary['online_params'])
+      if isinstance(bundle_dictionary['online_params'], core.FrozenDict):
+        online_network_params = bundle_dictionary['online_params']
+        self.target_network_params = bundle_dictionary['target_params']
+      else:  # Load pre-linen checkpoint.
+        online_network_params = core.FrozenDict({
+            'params': checkpoints.convert_pre_linen(
+                bundle_dictionary['online_params']).unfreeze()
+        })
+        self.target_network_params = core.FrozenDict({
+            'params': checkpoints.convert_pre_linen(
+                bundle_dictionary['target_params']).unfreeze()
+        })
       # We recreate the optimizer with the new online weights.
       optimizer_def = create_optimizer(self._optimizer_name)
-      self.optimizer = optimizer_def.create(online_network)
-      self.target_network = self.target_network.replace(
-          params=bundle_dictionary['target_params'])
+      self.optimizer = optimizer_def.create(online_network_params)
     elif not self.allow_partial_reload:
       return False
     else:

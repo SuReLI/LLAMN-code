@@ -33,6 +33,7 @@ import math
 from dopamine.discrete_domains import atari_lib
 import gin
 import gym
+from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 import tensorflow as tf
 
@@ -41,12 +42,20 @@ CARTPOLE_MIN_VALS = np.array([-2.4, -5., -math.pi/12., -math.pi*2.])
 CARTPOLE_MAX_VALS = np.array([2.4, 5., math.pi/12., math.pi*2.])
 ACROBOT_MIN_VALS = np.array([-1., -1., -1., -1., -5., -5.])
 ACROBOT_MAX_VALS = np.array([1., 1., 1., 1., 5., 5.])
+MOUNTAINCAR_MIN_VALS = np.array([-1.2, -0.07])
+MOUNTAINCAR_MAX_VALS = np.array([0.6, 0.07])
 gin.constant('gym_lib.CARTPOLE_OBSERVATION_SHAPE', (4, 1))
 gin.constant('gym_lib.CARTPOLE_OBSERVATION_DTYPE', tf.float64)
 gin.constant('gym_lib.CARTPOLE_STACK_SIZE', 1)
 gin.constant('gym_lib.ACROBOT_OBSERVATION_SHAPE', (6, 1))
 gin.constant('gym_lib.ACROBOT_OBSERVATION_DTYPE', tf.float64)
 gin.constant('gym_lib.ACROBOT_STACK_SIZE', 1)
+gin.constant('gym_lib.LUNAR_OBSERVATION_SHAPE', (8, 1))
+gin.constant('gym_lib.LUNAR_OBSERVATION_DTYPE', tf.float64)
+gin.constant('gym_lib.LUNAR_STACK_SIZE', 1)
+gin.constant('gym_lib.MOUNTAINCAR_OBSERVATION_SHAPE', (2, 1))
+gin.constant('gym_lib.MOUNTAINCAR_OBSERVATION_DTYPE', tf.float64)
+gin.constant('gym_lib.MOUNTAINCAR_STACK_SIZE', 1)
 
 
 @gin.configurable
@@ -64,7 +73,8 @@ def create_gym_environment(environment_name=None, version='v0'):
   full_game_name = '{}-{}'.format(environment_name, version)
   env = gym.make(full_game_name)
   # Strip out the TimeLimit wrapper from Gym, which caps us at 200 steps.
-  env = env.env
+  if isinstance(env, TimeLimit):
+    env = env.env
   # Wrap the returned environment in a class which conforms to the API expected
   # by Dopamine.
   env = GymPreprocessing(env)
@@ -116,9 +126,10 @@ class BasicDiscreteDomainNetwork(tf.keras.layers.Layer):
     """Creates the output tensor/op given the state tensor as input."""
     x = tf.cast(state, tf.float32)
     x = self.flatten(x)
-    x -= self.min_vals
-    x /= self.max_vals - self.min_vals
-    x = 2.0 * x - 1.0  # Rescale in range [-1, 1].
+    if self.min_vals is not None:
+      x -= self.min_vals
+      x /= self.max_vals - self.min_vals
+      x = 2.0 * x - 1.0  # Rescale in range [-1, 1].
     x = self.dense1(x)
     x = self.dense2(x)
     x = self.last_layer(x)
@@ -353,6 +364,47 @@ class AcrobotRainbowNetwork(tf.keras.Model):
 
 
 @gin.configurable
+class LunarLanderDQNNetwork(tf.keras.Model):
+  """Keras DQN network for LunarLander."""
+
+  def __init__(self, num_actions, name=None):
+    """Builds the deep network used to compute the agent's Q-values.
+
+    Args:
+      num_actions: int, number of actions.
+      name: str, used to create scope for network parameters.
+    """
+    super(LunarLanderDQNNetwork, self).__init__(name=name)
+    self.net = BasicDiscreteDomainNetwork(None, None, num_actions)
+
+  def call(self, state):
+    """Creates the output tensor/op given the state tensor as input."""
+    x = self.net(state)
+    return atari_lib.DQNNetworkType(x)
+
+
+@gin.configurable
+class MountainCarDQNNetwork(tf.keras.Model):
+  """Keras DQN network for MountainCar."""
+
+  def __init__(self, num_actions, name=None):
+    """Builds the deep network used to compute the agent's Q-values.
+
+    Args:
+      num_actions: int, number of actions.
+      name: str, used to create scope for network parameters.
+    """
+    super(MountainCarDQNNetwork, self).__init__(name=name)
+    self.net = BasicDiscreteDomainNetwork(
+        MOUNTAINCAR_MIN_VALS, MOUNTAINCAR_MAX_VALS, num_actions)
+
+  def call(self, state):
+    """Creates the output tensor/op given the state tensor as input."""
+    x = self.net(state)
+    return atari_lib.DQNNetworkType(x)
+
+
+@gin.configurable
 class GymPreprocessing(object):
   """A Wrapper class around Gym environments."""
 
@@ -381,5 +433,7 @@ class GymPreprocessing(object):
 
   def step(self, action):
     observation, reward, game_over, info = self.environment.step(action)
+    was_truncated = info.get('TimeLimit.truncated', False)
+    game_over = game_over and not was_truncated
     self.game_over = game_over
     return observation, reward, game_over, info

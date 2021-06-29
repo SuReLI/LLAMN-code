@@ -165,7 +165,8 @@ class Runner(object):
                num_iterations=200,
                training_steps=250000,
                evaluation_steps=125000,
-               max_steps_per_episode=27000):
+               max_steps_per_episode=27000,
+               clip_rewards=True):
     """Initialize the Runner object in charge of running a full experiment.
 
     Args:
@@ -183,6 +184,7 @@ class Runner(object):
       evaluation_steps: int, the number of evaluation steps to perform.
       max_steps_per_episode: int, maximum number of steps after which an episode
         terminates.
+      clip_rewards: bool, whether to clip rewards in [-1, 1].
 
     This constructor will take the following actions:
     - Initialize an environment.
@@ -202,6 +204,7 @@ class Runner(object):
     self._evaluation_steps = evaluation_steps
     self._max_steps_per_episode = max_steps_per_episode
     self._base_dir = base_dir
+    self._clip_rewards = clip_rewards
     self._create_directories()
     self._summary_writer = tf.compat.v1.summary.FileWriter(self._base_dir)
 
@@ -287,13 +290,18 @@ class Runner(object):
     observation, reward, is_terminal, _ = self._environment.step(action)
     return observation, reward, is_terminal
 
-  def _end_episode(self, reward):
+  def _end_episode(self, reward, terminal=True):
     """Finalizes an episode run.
 
     Args:
       reward: float, the last reward from the environment.
+      terminal: bool, whether the last state-action led to a terminal state.
     """
-    self._agent.end_episode(reward)
+    if isinstance(self._agent, jax_dqn_agent.JaxDQNAgent):
+      self._agent.end_episode(reward, terminal)
+    else:
+      # TODO(joshgreaves): Add terminal signal to TF dopamine agents
+      self._agent.end_episode(reward)
 
   def _run_one_episode(self):
     """Executes a full trajectory of the agent interacting with the environment.
@@ -314,8 +322,9 @@ class Runner(object):
       total_reward += reward
       step_number += 1
 
-      # Perform reward clipping.
-      reward = np.clip(reward, -1, 1)
+      if self._clip_rewards:
+        # Perform reward clipping.
+        reward = np.clip(reward, -1, 1)
 
       if hasattr(self._environment, 'game_over'):
         game_over = self._environment.game_over
@@ -328,12 +337,12 @@ class Runner(object):
       elif is_terminal:
         # If we lose a life but the episode is not over, signal an artificial
         # end of episode to the agent.
-        self._agent.end_episode(reward)
+        self._end_episode(reward, is_terminal)
         action = self._agent.begin_episode(observation)
       else:
         action = self._agent.step(reward, observation)
 
-    self._end_episode(reward)
+    self._end_episode(reward, is_terminal)
 
     return step_number, total_reward
 
@@ -521,6 +530,7 @@ class Runner(object):
       self._log_experiment(iteration, statistics)
       if iteration > 0 and iteration % 10 == 0 or iteration == self._num_iterations-1:
         self._checkpoint_experiment(iteration)
+    self._summary_writer.flush()
 
 
 @gin.configurable
