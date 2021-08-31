@@ -32,7 +32,7 @@ from dopamine.discrete_domains.llamn_game_lib import create_game
 
 
 @gin.configurable
-def load_expert(self, ckpt_dir, nb_layers=4, soft_fix=False):
+def load_expert(self, ckpt_dir, nb_layers=4):
 
   ckpt = tf.compat.v1.train.get_checkpoint_state(os.path.join(ckpt_dir, "checkpoints"))
   ckpt_path = ckpt.model_checkpoint_path

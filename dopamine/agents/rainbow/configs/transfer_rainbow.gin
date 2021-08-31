@@ -28,7 +28,6 @@ tf.train.AdamOptimizer.epsilon = 0.00015
 transfer_run_experiment.MasterRunner.first_game_name = 'Pong'
 transfer_run_experiment.MasterRunner.transferred_games_names = ['Breakout', 'Carnival', 'SpaceInvaders', 'VideoPinball']
 transfer_run_experiment.load_expert.nb_layers = 5
-transfer_run_experiment.load_expert.soft_fix = True
 
 # Sticky actions with probability 0.25, as suggested by (Machado et al., 2017).
 atari_lib.create_atari_environment.sticky_actions = True
