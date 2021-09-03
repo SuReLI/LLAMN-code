@@ -23,8 +23,6 @@ from __future__ import print_function
 import os
 import glob
 import datetime
-import warnings
-warnings.filterwarnings('ignore', r".*Passing \(type, 1\).*")
 
 
 from absl import app

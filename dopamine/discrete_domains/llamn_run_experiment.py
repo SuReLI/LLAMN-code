@@ -253,7 +253,8 @@ class LLAMNRunner(TrainRunner):
                nb_steps_per_steps=-1,
                training_steps=250000,
                max_steps_per_episode=27000,
-               buffer_prefill=None):
+               buffer_prefill=None,
+               clip_rewards=True):
     assert base_dir is not None
     tf.compat.v1.disable_v2_behavior()
 
@@ -264,6 +265,7 @@ class LLAMNRunner(TrainRunner):
     self._training_steps = training_steps
     self._max_steps_per_episode = max_steps_per_episode
     self._base_dir = base_dir
+    self._clip_rewards = clip_rewards
     self._create_directories()
     self._summary_writer = tf.compat.v1.summary.FileWriter(self._base_dir)
     self.buffer_prefill = buffer_prefill

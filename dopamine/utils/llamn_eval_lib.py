@@ -7,14 +7,18 @@ import os
 import re
 import time
 
-from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+from dopamine.agents.llamn_network.expert_rainbow_agent import ExpertAgent
+from dopamine.agents.llamn_network.llamn_agent import AMNAgent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
 from dopamine.discrete_domains.llamn_run_experiment import ExpertRunner
 from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent
-import tensorflow as tf
+from dopamine.utils.saliency_lib import SaliencyAgent
 
 
-class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
+class MyExpertAgent(ExpertAgent, SaliencyAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
 
   def _build_replay_buffer(self, *args, **kwargs):
@@ -43,7 +47,7 @@ class MyExpertAgent(expert_rainbow_agent.ExpertAgent):
     MyRainbowAgent.reload_checkpoint(self, ckpt_path)
 
 
-class MyLLAMNAgent(llamn_agent.AMNAgent):
+class MyLLAMNAgent(AMNAgent, SaliencyAgent):
   """Sample LLAMN agent to visualize Q-values and rewards."""
 
   def __init__(self, sess,
@@ -81,8 +85,23 @@ class MyExpertRunner(ExpertRunner):
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
     self._environment.render('human')
-    time.sleep(self.delay / 1000)
+    if hasattr(self, 'saliency_path'):
+      self.display_saliency()
+    else:
+      time.sleep(self.delay / 1000)
     return outputs
+
+  def display_saliency(self):
+    if not hasattr(self, 'frame_nb'):
+      self.frame_nb = 0
+    saliency_map = self._agent.compute_saliency(self._agent.state)
+
+    plt.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    plt.imshow(saliency_map, cmap='Reds', alpha=0.5)
+    image_path = f"{self.saliency_path}_{self.frame_nb:02}.svg"
+    plt.savefig(image_path)
+
+    self.frame_nb += 1
 
   def evaluate(self, num_eps):
     self._agent.eval_mode = True
@@ -113,8 +132,24 @@ class MyLLAMNRunner(LLAMNRunner):
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
     self._environment.render('human')
-    time.sleep(self.delay / 1000)
+    if hasattr(self, 'saliency_path'):
+      self.display_saliency()
+    else:
+      time.sleep(self.delay / 1000)
     return outputs
+
+  def display_saliency(self):
+    if not hasattr(self, 'frame_nb'):
+      self.frame_nb = [0 for _ in range(self._nb_envs)]
+    saliency_map = self._agent.compute_saliency(self._agent.state)
+
+    plt.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    plt.imshow(saliency_map, cmap='Reds', alpha=0.5)
+    game_name = self._names[self._game_index]
+    image_path = f"{self.saliency_path}_{game_name}_{self.frame_nb[self._game_index]:02}.svg"
+    plt.savefig(image_path)
+
+    self.frame_nb[self._game_index] += 1
 
   def evaluate(self, num_eps):
     for self._game_index in range(self._nb_envs):
@@ -147,7 +182,7 @@ def should_evaluate(phase, game, name_filter, name_exclude):
   return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 
-def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir):
+def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir, saliency):
   """Main entrypoint for running and generating visualizations"""
 
   phase = phase + '_' + str(nb_day)
@@ -164,10 +199,20 @@ def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, de
       # exact because we load from a checkpoint, not from a previous llamn network
       runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
       runner.delay = delay
+
+      if saliency:
+        saliency_dir = os.path.join(root_dir, 'agent_viz', phase, f"expert_{game.name}")
+        os.makedirs(saliency_dir, exist_ok=True)
+        runner.saliency_path = os.path.join(saliency_dir, "saliency")
       runner.evaluate(num_eps)
 
   else:
     print('\033[33mNight', nb_day, '\033[0m')
     runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)
     runner.delay = delay
+
+    if saliency:
+      saliency_dir = os.path.join(root_dir, 'agent_viz', phase)
+      os.makedirs(saliency_dir, exist_ok=True)
+      runner.saliency_path = os.path.join(saliency_dir, "saliency")
     runner.evaluate(num_eps)

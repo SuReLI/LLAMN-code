@@ -7,6 +7,10 @@ import os
 import glob
 import gin
 
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import tensorflow as tf
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
 from absl import app
 from absl import flags
 from absl import logging
@@ -14,16 +18,13 @@ from dopamine.utils import llamn_eval_lib
 from dopamine.discrete_domains.llamn_game_lib import create_game
 
 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
 flags.DEFINE_string('root_dir', 'results/', 'Root directory.')
 flags.DEFINE_string('filter', '', 'Which subnetworks to test.', short_name='f')
 flags.DEFINE_string('exclude', '^$', 'Which subnetworks to not test.', short_name='e')
 flags.DEFINE_integer('num_eps', 3, 'Number of episodes to run.')
 flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
 flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
+flags.DEFINE_boolean('saliency', False, 'Save the saliency maps')
 
 FLAGS = flags.FLAGS
 
@@ -66,7 +67,8 @@ def main(_):
                          name_exclude=FLAGS.exclude,
                          num_eps=FLAGS.num_eps,
                          delay=FLAGS.delay,
-                         root_dir=expe_dir)
+                         root_dir=expe_dir,
+                         saliency=FLAGS.saliency)
 
 
 if __name__ == '__main__':
