@@ -24,7 +24,7 @@ flags.DEFINE_string('exclude', '^$', 'Which subnetworks to not test.', short_nam
 flags.DEFINE_integer('num_eps', 3, 'Number of episodes to run.')
 flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
 flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
-flags.DEFINE_boolean('saliency', False, 'Save the saliency maps')
+flags.DEFINE_enum('mode', None, ['save_state', 'saliency', 'features'], 'The mode of evaluation')
 
 FLAGS = flags.FLAGS
 
@@ -48,27 +48,32 @@ def main(_):
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
   games_names = gin.query_parameter('MasterRunner.games_names')
 
-  games = [[create_game(game_name) for game_name in list_names]
-           for list_names in games_names]
+  all_games = [[create_game(game_name) for game_name in list_names]
+               for list_names in games_names]
 
-  nb_actions = max([game.num_actions for game_list in games
+  nb_actions = max([game.num_actions for game_list in all_games
                     for game in game_list])
+
+  if FLAGS.mode == 'save_state':
+    gin.bind_parameter('WrappedPrioritizedReplayBuffer.batch_size', llamn_eval_lib.NB_STATES)
+
+  elif FLAGS.mode == 'saliency':
+    FLAGS.num_eps = 1
+    FLAGS.max_steps = min(500, FLAGS.max_steps)
 
   gin.bind_parameter('Runner.max_steps_per_episode', FLAGS.max_steps)
   gin.bind_parameter('LLAMNRunner.max_steps_per_episode', FLAGS.max_steps)
 
-  for day, games in enumerate(games):
+  runner = llamn_eval_lib.EvalRunner(nb_actions=nb_actions,
+                                     name_filter=FLAGS.filter,
+                                     name_exclude=FLAGS.exclude,
+                                     num_eps=FLAGS.num_eps,
+                                     delay=FLAGS.delay,
+                                     root_dir=expe_dir)
+
+  for day, games in enumerate(all_games):
     for phase in ('day', 'night'):
-      llamn_eval_lib.run(phase=phase,
-                         nb_day=day,
-                         games=games,
-                         nb_actions=nb_actions,
-                         name_filter=FLAGS.filter,
-                         name_exclude=FLAGS.exclude,
-                         num_eps=FLAGS.num_eps,
-                         delay=FLAGS.delay,
-                         root_dir=expe_dir,
-                         saliency=FLAGS.saliency)
+      runner.run(games, phase, day, FLAGS.mode)
 
 
 if __name__ == '__main__':

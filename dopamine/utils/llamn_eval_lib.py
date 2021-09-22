@@ -8,14 +8,20 @@ import re
 import time
 
 import tensorflow as tf
+import numpy as np
 import matplotlib.pyplot as plt
 
+from dopamine.discrete_domains import checkpointer
 from dopamine.agents.llamn_network.expert_rainbow_agent import ExpertAgent
 from dopamine.agents.llamn_network.llamn_agent import AMNAgent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
 from dopamine.discrete_domains.llamn_run_experiment import ExpertRunner
 from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent
 from dopamine.utils.saliency_lib import SaliencyAgent
+
+
+NB_STATES = 24**2
+assert (NB_STATES % 2 == 0), "NB_STATES must be even"
 
 
 class MyExpertAgent(ExpertAgent, SaliencyAgent):
@@ -46,6 +52,12 @@ class MyExpertAgent(ExpertAgent, SaliencyAgent):
 
     MyRainbowAgent.reload_checkpoint(self, ckpt_path)
 
+  def _build_features_op(self):
+    state_shape = (NB_STATES//2, *self.observation_shape, 4)
+    self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
+    self.all_outputs = self.online_convnet(self.all_states_ph)
+    self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)[0]
+
 
 class MyLLAMNAgent(AMNAgent, SaliencyAgent):
   """Sample LLAMN agent to visualize Q-values and rewards."""
@@ -75,6 +87,20 @@ class MyLLAMNAgent(AMNAgent, SaliencyAgent):
 
     MyDQNAgent.reload_checkpoint(self, ckpt_path)
 
+  def _build_features_op(self):
+    state_shape = (NB_STATES//2, *self.observation_shape, 4)
+    self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
+    self.all_outputs = self.convnet(self.all_states_ph)
+    self.all_q_argmax = []
+
+    for i in range(self.nb_experts):
+      expert_mask = [n_action < self.expert_num_actions[i]
+                     for n_action in range(self.llamn_num_actions)]
+
+      partial_q_values = tf.boolean_mask(self.all_outputs.q_values, expert_mask, axis=1)
+      q_argmax = tf.argmax(partial_q_values, axis=1)[0]
+      self.all_q_argmax.append(q_argmax)
+
 
 class MyExpertRunner(ExpertRunner):
 
@@ -84,29 +110,32 @@ class MyExpertRunner(ExpertRunner):
 
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
-    self._environment.render('human')
     if hasattr(self, 'saliency_path'):
-      self.display_saliency()
+      self.compute_saliency()
     else:
+      self._environment.render('human')
       time.sleep(self.delay / 1000)
     return outputs
 
-  def display_saliency(self):
+  def compute_saliency(self):
     if not hasattr(self, 'frame_nb'):
       self.frame_nb = 0
+      self.fig, self.ax = plt.subplots()
+
     saliency_map = self._agent.compute_saliency(self._agent.state)
 
-    plt.imshow(self._agent.state[0, :, :, 3], cmap='gray')
-    plt.imshow(saliency_map, cmap='Reds', alpha=0.5)
-    image_path = f"{self.saliency_path}_{self.frame_nb:02}.svg"
-    plt.savefig(image_path)
+    image_path = f"{self.saliency_path}_{self.frame_nb:02}.png"
+    self.ax.cla()
+    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
+    self.fig.savefig(image_path)
 
     self.frame_nb += 1
 
   def evaluate(self, num_eps):
     self._agent.eval_mode = True
 
-    game_name = self._environment.environment.game.capitalize()
+    game_name = self._environment.environment._game.capitalize()
     print('  \033[34m', game_name, '\033[0m', sep='')
 
     total_steps = 0
@@ -131,45 +160,47 @@ class MyLLAMNRunner(LLAMNRunner):
 
   def _run_one_step(self, action):
     outputs = super()._run_one_step(action)
-    self._environment.render('human')
     if hasattr(self, 'saliency_path'):
-      self.display_saliency()
+      self.compute_saliency()
     else:
+      self._environment.render('human')
       time.sleep(self.delay / 1000)
     return outputs
 
-  def display_saliency(self):
+  def compute_saliency(self):
     if not hasattr(self, 'frame_nb'):
       self.frame_nb = [0 for _ in range(self._nb_envs)]
+      self.fig, self.ax = plt.subplots()
     saliency_map = self._agent.compute_saliency(self._agent.state)
 
-    plt.imshow(self._agent.state[0, :, :, 3], cmap='gray')
-    plt.imshow(saliency_map, cmap='Reds', alpha=0.5)
     game_name = self._names[self._game_index]
-    image_path = f"{self.saliency_path}_{game_name}_{self.frame_nb[self._game_index]:02}.svg"
-    plt.savefig(image_path)
+    image_path = f"{self.saliency_path}_{game_name}_{self.frame_nb[self._game_index]:02}.png"
+    self.ax.cla()
+    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
+    self.fig.savefig(image_path)
 
     self.frame_nb[self._game_index] += 1
 
-  def evaluate(self, num_eps):
-    for self._game_index in range(self._nb_envs):
-      game_name = self._names[self._game_index]
-      print('  \033[34m', game_name, '\033[0m', sep='')
+  def evaluate_one_agent(self, agent_index, num_eps):
+    self._game_index = agent_index
+    game_name = self._names[self._game_index]
+    print('  \033[34m', game_name, '\033[0m', sep='')
 
-      self._agent.eval_mode = True
-      total_steps = 0
-      total_reward = 0
-      for _ in range(num_eps):
-        steps, reward = self._run_one_episode()
-        total_steps += steps
-        total_reward += reward
-        print("    Reward:", reward)
+    self._agent.eval_mode = True
+    total_steps = 0
+    total_reward = 0
+    for _ in range(num_eps):
+      steps, reward = self._run_one_episode()
+      total_steps += steps
+      total_reward += reward
+      print("    Reward:", reward)
 
-      self._environment.close()
-      game_name = self._environment.environment.game.capitalize()
-      print("    ----------------")
-      print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
-      print("    Mean number of steps:", total_steps / num_eps)
+    self._environment.close()
+    game_name = self._environment.environment._game.capitalize()
+    print("    ----------------")
+    print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
+    print("    Mean number of steps:", total_steps / num_eps)
 
 
 def create_expert(sess, environment, llamn_path, name, summary_writer=None):
@@ -182,37 +213,123 @@ def should_evaluate(phase, game, name_filter, name_exclude):
   return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 
-def run(phase, nb_day, games, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir, saliency):
-  """Main entrypoint for running and generating visualizations"""
+class EvalRunner:
 
-  phase = phase + '_' + str(nb_day)
-  phase_dir = os.path.join(root_dir, phase)
+  def __init__(self, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir):
+    self.nb_actions = nb_actions
+    self.name_filter = name_filter
+    self.name_exclude = name_exclude
+    self.num_eps = num_eps
+    self.delay = delay
+    self.root_dir = root_dir
 
-  games = list(filter(lambda game: should_evaluate(phase, game, name_filter, name_exclude), games))
-  if not games:
-    return
+  def eval_expert(self, phase, phase_dir, game, nb_day, mode=False):
+    # llamn_path must be non-False if it's not the first day, but don't need to be
+    # exact because we load from a checkpoint, not from a previous llamn network
+    runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
+    runner.delay = self.delay
 
-  if phase.startswith('day'):
-    print('\033[33mDay', nb_day, '\033[0m')
-    for game in games:
-      # llamn_path must be non-False if it's not the first day, but don't need to be
-      # exact because we load from a checkpoint, not from a previous llamn network
-      runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
-      runner.delay = delay
+    if mode == 'save_state':
+      if not hasattr(self, 'saved_games'):
+        self.saved_games = []
+      if game.name in self.saved_games:
+        return
+      self.saved_games.append(game.name)
+      print('  \033[34mSaving states from ', game.name, '\033[0m', sep='')
+      runner._agent._replay = MyRainbowAgent._build_replay_buffer(runner._agent, False)
+      checkpoint_nb = checkpointer.get_latest_checkpoint_number(runner._checkpoint_dir)
+      runner._agent._replay.load(runner._checkpoint_dir, checkpoint_nb)
+      all_states = runner._sess.run(runner._agent._replay.states)
+      random_idx = np.random.choice(all_states.shape[0], NB_STATES, replace=False)
+      sample_states = all_states[random_idx]
+      os.makedirs('data/states', exist_ok=True)
+      np.save(os.path.join('data/states', game.name+'.npy'), sample_states)
+      return
 
-      if saliency:
-        saliency_dir = os.path.join(root_dir, 'agent_viz', phase, f"expert_{game.name}")
-        os.makedirs(saliency_dir, exist_ok=True)
-        runner.saliency_path = os.path.join(saliency_dir, "saliency")
-      runner.evaluate(num_eps)
+    elif mode == 'features':
+      print('  \033[34m', game.name, '\033[0m', sep='')
+      result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
+      os.makedirs(result_dir, exist_ok=True)
+      runner._agent._build_features_op()
+      all_states = np.load(os.path.join('data/states', game.name+'.npy'))
+      nb_states = all_states.shape[0]
 
-  else:
-    print('\033[33mNight', nb_day, '\033[0m')
-    runner = MyLLAMNRunner(phase_dir, nb_actions, games, [], MyLLAMNAgent)
-    runner.delay = delay
+      features = np.zeros((nb_states, 512), np.float32)
+      features[:NB_STATES//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
+      features[NB_STATES//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
+      np.save(os.path.join(result_dir, 'features.npy'), features)
 
-    if saliency:
-      saliency_dir = os.path.join(root_dir, 'agent_viz', phase)
+      actions = np.zeros(nb_states, np.float32)
+      actions[:NB_STATES//2] = runner._sess.run(runner._agent.all_q_argmax,
+                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
+      actions[NB_STATES//2:] = runner._sess.run(runner._agent.all_q_argmax,
+                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
+      np.save(os.path.join(result_dir, 'actions.npy'), actions)
+      return
+
+    elif mode == 'saliency':
+      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
       os.makedirs(saliency_dir, exist_ok=True)
       runner.saliency_path = os.path.join(saliency_dir, "saliency")
-    runner.evaluate(num_eps)
+    runner.evaluate(self.num_eps)
+
+  def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False):
+    runner = MyLLAMNRunner(phase_dir, self.nb_actions, games, [], MyLLAMNAgent)
+    runner.delay = self.delay
+
+    if mode == 'save_state':
+      return
+
+    elif mode == 'features':
+      game = games[agent_ind]
+      print('  \033[34m', game.name, '\033[0m', sep='')
+      result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
+      os.makedirs(result_dir, exist_ok=True)
+      runner._agent._build_features_op()
+      all_states = np.load(os.path.join('data/states', game.name+'.npy'))
+      nb_states = all_states.shape[0]
+
+      features = np.zeros((nb_states, 512), np.float32)
+      features[:NB_STATES//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
+      features[NB_STATES//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
+      np.save(os.path.join(result_dir, 'features.npy'), features)
+
+      actions = np.zeros(nb_states, np.float32)
+      actions[:NB_STATES//2] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
+                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
+      actions[NB_STATES//2:] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
+                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
+      np.save(os.path.join(result_dir, 'actions.npy'), actions)
+      return
+
+    elif mode == 'saliency':
+      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase)
+      os.makedirs(saliency_dir, exist_ok=True)
+      runner.saliency_path = os.path.join(saliency_dir, "saliency")
+
+    runner.evaluate_one_agent(agent_ind, self.num_eps)
+
+  def run(self, all_games, phase, nb_day, mode=False):
+    """Main entrypoint for running and generating visualizations"""
+
+    phase = phase + '_' + str(nb_day)
+    phase_dir = os.path.join(self.root_dir, phase)
+
+    games = list(filter(lambda game: should_evaluate(phase, game, self.name_filter, self.name_exclude),
+                        all_games))
+    if not games:
+      return
+
+    if phase.startswith('day'):
+      print('\033[33mDay', nb_day, '\033[0m')
+      for game in games:
+        self.eval_expert(phase, phase_dir, game, nb_day, mode)
+
+    else:
+      print('\033[33mNight', nb_day, '\033[0m')
+      for agent_index in range(len(games)):
+        self.eval_llamn(phase, phase_dir, games, agent_index, mode)

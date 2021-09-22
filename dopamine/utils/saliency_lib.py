@@ -44,7 +44,7 @@ class SaliencyAgent:
       self.saliency_map = tf.reshape(error, (84, 84))
 
     elif isinstance(self, AMNAgent):
-      self.saliency_maps = []
+      self.saliency_map = []
       for i in range(self.nb_experts):
         perturbed_q_values = self.convnet(final_states).q_values
         expert_mask = [n_action < self.expert_num_actions[i]
@@ -52,7 +52,7 @@ class SaliencyAgent:
 
         partial_q_values = tf.boolean_mask(perturbed_q_values, expert_mask, axis=1)
         error = tf.norm(partial_q_values - self._net_q_output[i], axis=1)
-        self.saliency_maps.append(tf.reshape(error, (84, 84)))
+        self.saliency_map.append(tf.reshape(error, (84, 84)))
 
   def compute_saliency(self, state):
     if not hasattr(self, 'saliency_map'):
@@ -63,4 +63,4 @@ class SaliencyAgent:
       return self._sess.run(self.saliency_map, feed_dict={self.state_ph: state})
 
     elif isinstance(self, AMNAgent):
-      return self._sess.run(self.saliency_maps[self.ind_expert], feed_dict={self.state_ph: state})
+      return self._sess.run(self.saliency_map[self.ind_expert], feed_dict={self.state_ph: state})
