@@ -48,6 +48,7 @@ tensorboard
 tensorboard-plugin-wit
 tensorflow
 tensorflow-estimator
+tensorflow-probability>=0.13.0
 termcolor>=1.1.0
 tf-slim>=1.1.0
 urllib3>=1.25.10

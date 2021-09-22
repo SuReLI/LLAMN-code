@@ -10,8 +10,10 @@ You can find the documentation for each module in our codebase in our
 
 Dopamine is organized as follows:
 
+*   [`jax`](https://github.com/google/dopamine/tree/master/dopamine/jax)
+    contains jax agent implementations and networks.
 *   [`agents`](https://github.com/google/dopamine/tree/master/dopamine/agents)
-    contains agent implementations.
+    contains tenforflow agent implementations.
 *   [`atari`](https://github.com/google/dopamine/tree/master/dopamine/atari)
     contains Atari-specific code, including code to run experiments and
     preprocessing code.
@@ -23,8 +25,97 @@ Dopamine is organized as follows:
 *   [`colab`](https://github.com/google/dopamine/tree/master/dopamine/colab)
     contains code used to inspect the results of experiments, as well as example
     colab notebooks.
-*   [`tests`](https://github.com/google/dopamine/tree/master/tests)
-    contains all our test files.
+*   [`tests`](https://github.com/google/dopamine/tree/master/tests) contains all
+    our test files.
+
+## Training agents
+
+### Atari games
+
+The entry point to the standard Atari 2600 experiment is
+[`dopamine/discrete_domains/train.py`](https://github.com/google/dopamine/blob/master/dopamine/discrete_domains/train.py).
+To run the basic DQN agent,
+
+```
+python -um dopamine.discrete_domains.train \
+  --base_dir /tmp/dopamine_runs \
+  --gin_files dopamine/agents/dqn/configs/dqn.gin
+```
+
+By default, this will kick off an experiment lasting 200 million frames. The
+command-line interface will output statistics about the latest training episode:
+
+```
+[...]
+I0824 17:13:33.078342 140196395337472 tf_logging.py:115] gamma: 0.990000
+I0824 17:13:33.795608 140196395337472 tf_logging.py:115] Beginning training...
+Steps executed: 5903 Episode length: 1203 Return: -19.
+```
+
+To get finer-grained information about the process, you can adjust the
+experiment parameters in
+[`dopamine/agents/dqn/configs/dqn.gin`](https://github.com/google/dopamine/blob/master/dopamine/agents/dqn/configs/dqn.gin),
+in particular by reducing `Runner.training_steps` and `Runner.evaluation_steps`,
+which together determine the total number of steps needed to complete an
+iteration. This is useful if you want to inspect log files or checkpoints, which
+are generated at the end of each iteration.
+
+More generally, the whole of Dopamine is easily configured using the
+[gin configuration framework](https://github.com/google/gin-config).
+
+### Non-Atari discrete environments
+
+We provide sample configuration files for training an agent on Cartpole and
+Acrobot. For example, to train C51 on Cartpole with default settings, run the
+following command:
+
+```
+python -um dopamine.discrete_domains.train \
+  --base_dir /tmp/dopamine_runs \
+  --gin_files dopamine/agents/rainbow/configs/c51_cartpole.gin
+```
+
+You can train Rainbow on Acrobot with the following command:
+
+```
+python -um dopamine.discrete_domains.train \
+  --base_dir /tmp/dopamine_runs \
+  --gin_files dopamine/agents/rainbow/configs/rainbow_acrobot.gin
+```
+
+### Continuous control environments
+
+The entry point for continuous control agents is
+[`dopamine/continuous_domains/train.py`](https://github.com/google/dopamine/blob/master/dopamine/continuous_domains/train.py).
+You will need a Mujoco key to run the following example. To run SAC on the
+HalfCheetah environment of Mujoco, run:
+
+```
+python -um dopamine.continuous_domains.train \
+  --base_dir /tmp/dopamine_runs \
+  --gin_files dopamine/jax/agents/sac/configs/sac.gin
+```
+
+By default, this will kick off an experiment lasting 3200 episodes, with 1000
+environment steps per episode. The command-line interface will output statistics
+about the latest training episode:
+
+```
+[...]
+I0908 17:19:39.618797 1803949 run_experiment.py:446] Starting iteration 0
+I0908 17:19:40.592262 1803949 run_experiment.py:405] Average undiscounted return per training episode: -168.19
+I0908 17:19:40.592391 1803949 run_experiment.py:407] Average training steps per second: 1027.80
+I0908 17:19:45.699378 1803949 run_experiment.py:427] Average undiscounted return per evaluation episode: -279.07
+```
+
+To run with different environments/hyperparemeters, adjust the gin config file
+found here:
+[`dopamine/jax/agents/sac/configs/sac.gin`](https://github.com/google/dopamine/blob/master/dopamine/jax/agents/sac/configs/sac.gin).
+For your experiments, you may choose to supply a new gin config file, or
+override the existing config file with command line `gin_bindings` args.
+
+For more information on using gin, see the
+[gin github repo](https://github.com/google/gin-config).
 
 ## Configuring agents
 

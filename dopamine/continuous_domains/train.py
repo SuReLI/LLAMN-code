@@ -14,6 +14,13 @@
 # limitations under the License.
 r"""The entry point for running a Dopamine agent on continuous control envs.
 
+"""
+
+from absl import app
+from absl import flags
+from absl import logging
+
+from dopamine.continuous_domains import run_experiment
 
 flags.DEFINE_string('base_dir', None,
                     'Base directory to host all required sub-directories.')
@@ -34,6 +41,9 @@ def main(unused_argv):
     unused_argv: Arguments (unused).
   """
   logging.set_verbosity(logging.INFO)
+  base_dir = FLAGS.base_dir
+  gin_files = FLAGS.gin_files
+  gin_bindings = FLAGS.gin_bindings
 
   run_experiment.load_gin_configs(gin_files, gin_bindings)
   runner = run_experiment.create_continuous_runner(base_dir)
