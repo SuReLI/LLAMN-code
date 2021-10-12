@@ -4,6 +4,7 @@ results*
 main
 visu
 eval
+eval_transfer
 
 etc/
 data/

@@ -7,7 +7,7 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
 
-from dopamine.agents.llamn_network.expert_rainbow_agent import ExpertAgent
+from dopamine.agents.rainbow.rainbow_agent import RainbowAgent
 from dopamine.agents.llamn_network.llamn_agent import AMNAgent
 
 
@@ -38,7 +38,7 @@ class SaliencyAgent:
     first_frames = tf.repeat(self.state_ph[:, :, :, :3], 84*84, axis=0)
     final_states = tf.concat([first_frames, perturbed_state], axis=3)
 
-    if isinstance(self, ExpertAgent):
+    if isinstance(self, RainbowAgent):
       perturbed_q_values = self.online_convnet(final_states).q_values
       error = tf.norm(perturbed_q_values - self._net_outputs.q_values, axis=1)
       self.saliency_map = tf.reshape(error, (84, 84))
@@ -59,7 +59,7 @@ class SaliencyAgent:
       self._build_mask()
       self._build_saliency_op()
 
-    if isinstance(self, ExpertAgent):
+    if isinstance(self, RainbowAgent):
       return self._sess.run(self.saliency_map, feed_dict={self.state_ph: state})
 
     elif isinstance(self, AMNAgent):

@@ -20,8 +20,10 @@ from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent
 from dopamine.utils.saliency_lib import SaliencyAgent
 
 
-NB_STATES = 24**2
+NB_STATES = 100
 assert (NB_STATES % 2 == 0), "NB_STATES must be even"
+
+NB_STATES_2 = NB_STATES**2
 
 
 class MyExpertAgent(ExpertAgent, SaliencyAgent):
@@ -53,10 +55,10 @@ class MyExpertAgent(ExpertAgent, SaliencyAgent):
     MyRainbowAgent.reload_checkpoint(self, ckpt_path)
 
   def _build_features_op(self):
-    state_shape = (NB_STATES//2, *self.observation_shape, 4)
+    state_shape = (NB_STATES_2//2, *self.observation_shape, 4)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.online_convnet(self.all_states_ph)
-    self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)[0]
+    self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)
 
 
 class MyLLAMNAgent(AMNAgent, SaliencyAgent):
@@ -88,7 +90,7 @@ class MyLLAMNAgent(AMNAgent, SaliencyAgent):
     MyDQNAgent.reload_checkpoint(self, ckpt_path)
 
   def _build_features_op(self):
-    state_shape = (NB_STATES//2, *self.observation_shape, 4)
+    state_shape = (NB_STATES_2//2, *self.observation_shape, 4)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.convnet(self.all_states_ph)
     self.all_q_argmax = []
@@ -98,7 +100,7 @@ class MyLLAMNAgent(AMNAgent, SaliencyAgent):
                      for n_action in range(self.llamn_num_actions)]
 
       partial_q_values = tf.boolean_mask(self.all_outputs.q_values, expert_mask, axis=1)
-      q_argmax = tf.argmax(partial_q_values, axis=1)[0]
+      q_argmax = tf.argmax(partial_q_values, axis=1)
       self.all_q_argmax.append(q_argmax)
 
 
@@ -235,15 +237,16 @@ class EvalRunner:
       if game.name in self.saved_games:
         return
       self.saved_games.append(game.name)
-      print('  \033[34mSaving states from ', game.name, '\033[0m', sep='')
+      print(f"  \033[34mSaving states from {game.name}\033[0m", sep='')
       runner._agent._replay = MyRainbowAgent._build_replay_buffer(runner._agent, False)
       checkpoint_nb = checkpointer.get_latest_checkpoint_number(runner._checkpoint_dir)
       runner._agent._replay.load(runner._checkpoint_dir, checkpoint_nb)
       all_states = runner._sess.run(runner._agent._replay.states)
-      random_idx = np.random.choice(all_states.shape[0], NB_STATES, replace=False)
+      random_idx = np.random.choice(all_states.shape[0], NB_STATES_2, replace=False)
       sample_states = all_states[random_idx]
-      os.makedirs('data/states', exist_ok=True)
-      np.save(os.path.join('data/states', game.name+'.npy'), sample_states)
+      os.makedirs(f'data/all_states/states_{NB_STATES}', exist_ok=True)
+      state_file = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy')
+      np.save(state_file, sample_states)
       return
 
     elif mode == 'features':
@@ -251,22 +254,21 @@ class EvalRunner:
       result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       runner._agent._build_features_op()
-      all_states = np.load(os.path.join('data/states', game.name+'.npy'))
-      nb_states = all_states.shape[0]
+      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
-      features = np.zeros((nb_states, 512), np.float32)
-      features[:NB_STATES//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
-      features[NB_STATES//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
-      np.save(os.path.join(result_dir, 'features.npy'), features)
+      features = np.zeros((NB_STATES_2, 512), np.float32)
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
-      actions = np.zeros(nb_states, np.float32)
-      actions[:NB_STATES//2] = runner._sess.run(runner._agent.all_q_argmax,
-                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
-      actions[NB_STATES//2:] = runner._sess.run(runner._agent.all_q_argmax,
-                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
-      np.save(os.path.join(result_dir, 'actions.npy'), actions)
+      actions = np.zeros(NB_STATES_2, np.float32)
+      actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
       return
 
     elif mode == 'saliency':
@@ -288,22 +290,21 @@ class EvalRunner:
       result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       runner._agent._build_features_op()
-      all_states = np.load(os.path.join('data/states', game.name+'.npy'))
-      nb_states = all_states.shape[0]
+      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
-      features = np.zeros((nb_states, 512), np.float32)
-      features[:NB_STATES//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
-      features[NB_STATES//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
-      np.save(os.path.join(result_dir, 'features.npy'), features)
+      features = np.zeros((NB_STATES_2, 512), np.float32)
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
-      actions = np.zeros(nb_states, np.float32)
-      actions[:NB_STATES//2] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
-                                         feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES//2]})
-      actions[NB_STATES//2:] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
-                                         feed_dict={runner._agent.all_states_ph: all_states[NB_STATES//2:]})
-      np.save(os.path.join(result_dir, 'actions.npy'), actions)
+      actions = np.zeros(NB_STATES_2, np.float32)
+      actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
       return
 
     elif mode == 'saliency':
