@@ -25,6 +25,7 @@ flags.DEFINE_integer('num_eps', 3, 'Number of episodes to run.')
 flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
 flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
 flags.DEFINE_enum('mode', None, ['save_state', 'saliency', 'features'], 'The mode of evaluation')
+flags.DEFINE_boolean('features_heatmap', False, 'Display features heatmap')
 
 FLAGS = flags.FLAGS
 
@@ -73,7 +74,7 @@ def main(_):
 
   for day, games in enumerate(all_games):
     for phase in ('day', 'night'):
-      runner.run(games, phase, day, FLAGS.mode)
+      runner.run(games, phase, day, FLAGS.mode, FLAGS.features_heatmap)
 
 
 if __name__ == '__main__':

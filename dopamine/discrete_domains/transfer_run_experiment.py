@@ -98,6 +98,7 @@ class MasterRunner:
       config.write(gin.config_str())
 
   def run_expert(self, base_dir, game, ckpt_dir=None):
+    tf.compat.v1.reset_default_graph()
     runner = TrainRunner(base_dir, create_agent, game.create)
     if ckpt_dir:
       runner.load_expert(ckpt_dir)

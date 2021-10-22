@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from dopamine.agents.rainbow.rainbow_agent import RainbowAgent
 from dopamine.discrete_domains.run_experiment import TrainRunner
 from dopamine.utils.example_viz_lib import MyRainbowAgent
-from dopamine.utils.saliency_lib import SaliencyAgent
+from dopamine.utils.eval_lib import SaliencyAgent
 
 
 NB_STATES = 100

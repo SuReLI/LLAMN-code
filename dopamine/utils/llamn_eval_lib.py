@@ -9,6 +9,7 @@ import time
 
 import tensorflow as tf
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 
 from dopamine.discrete_domains import checkpointer
@@ -17,7 +18,7 @@ from dopamine.agents.llamn_network.llamn_agent import AMNAgent
 from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
 from dopamine.discrete_domains.llamn_run_experiment import ExpertRunner
 from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent
-from dopamine.utils.saliency_lib import SaliencyAgent
+from dopamine.utils.eval_lib import SaliencyAgent, EvalRunner
 
 
 NB_STATES = 100
@@ -26,7 +27,7 @@ assert (NB_STATES % 2 == 0), "NB_STATES must be even"
 NB_STATES_2 = NB_STATES**2
 
 
-class MyExpertAgent(ExpertAgent, SaliencyAgent):
+class MyExpertAgent(SaliencyAgent, ExpertAgent):
   """Sample Expert agent to visualize Q-values and rewards."""
 
   def _build_replay_buffer(self, *args, **kwargs):
@@ -61,7 +62,7 @@ class MyExpertAgent(ExpertAgent, SaliencyAgent):
     self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)
 
 
-class MyLLAMNAgent(AMNAgent, SaliencyAgent):
+class MyLLAMNAgent(SaliencyAgent, AMNAgent):
   """Sample LLAMN agent to visualize Q-values and rewards."""
 
   def __init__(self, sess,
@@ -104,35 +105,7 @@ class MyLLAMNAgent(AMNAgent, SaliencyAgent):
       self.all_q_argmax.append(q_argmax)
 
 
-class MyExpertRunner(ExpertRunner):
-
-  def _initialize_checkpointer_and_maybe_resume(self, checkpoint_file_prefix):
-    self._agent.reload_checkpoint(self._checkpoint_dir)
-    self._start_iteration = 0
-
-  def _run_one_step(self, action):
-    outputs = super()._run_one_step(action)
-    if hasattr(self, 'saliency_path'):
-      self.compute_saliency()
-    else:
-      self._environment.render('human')
-      time.sleep(self.delay / 1000)
-    return outputs
-
-  def compute_saliency(self):
-    if not hasattr(self, 'frame_nb'):
-      self.frame_nb = 0
-      self.fig, self.ax = plt.subplots()
-
-    saliency_map = self._agent.compute_saliency(self._agent.state)
-
-    image_path = f"{self.saliency_path}_{self.frame_nb:02}.png"
-    self.ax.cla()
-    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
-    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
-    self.fig.savefig(image_path)
-
-    self.frame_nb += 1
+class MyExpertRunner(EvalRunner, ExpertRunner):
 
   def evaluate(self, num_eps):
     self._agent.eval_mode = True
@@ -154,35 +127,7 @@ class MyExpertRunner(ExpertRunner):
     print("    Mean number of steps:", total_steps / num_eps)
 
 
-class MyLLAMNRunner(LLAMNRunner):
-
-  def _initialize_checkpointer_and_maybe_resume(self, checkpoint_file_prefix):
-    self._agent.reload_checkpoint(self._checkpoint_dir)
-    self._start_iteration = 0
-
-  def _run_one_step(self, action):
-    outputs = super()._run_one_step(action)
-    if hasattr(self, 'saliency_path'):
-      self.compute_saliency()
-    else:
-      self._environment.render('human')
-      time.sleep(self.delay / 1000)
-    return outputs
-
-  def compute_saliency(self):
-    if not hasattr(self, 'frame_nb'):
-      self.frame_nb = [0 for _ in range(self._nb_envs)]
-      self.fig, self.ax = plt.subplots()
-    saliency_map = self._agent.compute_saliency(self._agent.state)
-
-    game_name = self._names[self._game_index]
-    image_path = f"{self.saliency_path}_{game_name}_{self.frame_nb[self._game_index]:02}.png"
-    self.ax.cla()
-    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
-    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
-    self.fig.savefig(image_path)
-
-    self.frame_nb[self._game_index] += 1
+class MyLLAMNRunner(EvalRunner, LLAMNRunner):
 
   def evaluate_one_agent(self, agent_index, num_eps):
     self._game_index = agent_index
@@ -225,7 +170,7 @@ class EvalRunner:
     self.delay = delay
     self.root_dir = root_dir
 
-  def eval_expert(self, phase, phase_dir, game, nb_day, mode=False):
+  def eval_expert(self, phase, phase_dir, game, nb_day, mode=False, heatmap=False):
     # llamn_path must be non-False if it's not the first day, but don't need to be
     # exact because we load from a checkpoint, not from a previous llamn network
     runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
@@ -275,9 +220,13 @@ class EvalRunner:
       saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
       os.makedirs(saliency_dir, exist_ok=True)
       runner.saliency_path = os.path.join(saliency_dir, "saliency")
+
+    if heatmap:
+      runner.features_heatmap = True
+
     runner.evaluate(self.num_eps)
 
-  def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False):
+  def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False, heatmap=False):
     runner = MyLLAMNRunner(phase_dir, self.nb_actions, games, [], MyLLAMNAgent)
     runner.delay = self.delay
 
@@ -308,13 +257,17 @@ class EvalRunner:
       return
 
     elif mode == 'saliency':
-      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase)
+      game = games[agent_ind]
+      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
       os.makedirs(saliency_dir, exist_ok=True)
       runner.saliency_path = os.path.join(saliency_dir, "saliency")
 
+    if heatmap:
+      runner.features_heatmap = True
+
     runner.evaluate_one_agent(agent_ind, self.num_eps)
 
-  def run(self, all_games, phase, nb_day, mode=False):
+  def run(self, all_games, phase, nb_day, mode=False, heatmap=False):
     """Main entrypoint for running and generating visualizations"""
 
     phase = phase + '_' + str(nb_day)
@@ -328,9 +281,9 @@ class EvalRunner:
     if phase.startswith('day'):
       print('\033[33mDay', nb_day, '\033[0m')
       for game in games:
-        self.eval_expert(phase, phase_dir, game, nb_day, mode)
+        self.eval_expert(phase, phase_dir, game, nb_day, mode, heatmap)
 
     else:
       print('\033[33mNight', nb_day, '\033[0m')
       for agent_index in range(len(games)):
-        self.eval_llamn(phase, phase_dir, games, agent_index, mode)
+        self.eval_llamn(phase, phase_dir, games, agent_index, mode, heatmap)

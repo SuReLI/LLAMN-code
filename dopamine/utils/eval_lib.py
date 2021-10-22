@@ -3,12 +3,86 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import time
+
 import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 
 from dopamine.agents.rainbow.rainbow_agent import RainbowAgent
 from dopamine.agents.llamn_network.llamn_agent import AMNAgent
+from dopamine.discrete_domains.llamn_run_experiment import ExpertRunner
+from dopamine.discrete_domains.llamn_run_experiment import LLAMNRunner
+
+matplotlib.use('TkAgg')
+
+
+def get_frame_nb(self):
+  return self._frame_nb[self._game_index]
+
+def set_frame_nb(self, value):
+  self._frame_nb[self._game_index] = value
+
+
+class EvalRunner:
+
+  def _initialize_checkpointer_and_maybe_resume(self, checkpoint_file_prefix):
+    self._agent.reload_checkpoint(self._checkpoint_dir)
+    self._start_iteration = 0
+
+  def _run_one_step(self, action):
+    outputs = super()._run_one_step(action)
+    if hasattr(self, 'features_heatmap'):
+      self.display_features()
+    if hasattr(self, 'saliency_path'):
+      self.save_saliency()
+    else:
+      self._environment.render('human')
+      time.sleep(self.delay / 1000)
+    return outputs
+
+  def save_saliency(self):
+    if not hasattr(self, 'fig'):
+      self.fig, self.ax = plt.subplots()
+      if isinstance(self, ExpertRunner):
+        EvalRunner.frame_nb = 0
+      elif isinstance(self, LLAMNRunner):
+        self._frame_nb = [0 for _ in range(self._nb_envs)]
+        EvalRunner.frame_nb = property(get_frame_nb, set_frame_nb)
+
+    saliency_map = self._agent.compute_saliency(self._agent.state)
+
+    image_path = f"{self.saliency_path}_{self.frame_nb:03}.png"
+
+    self.ax.cla()
+    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
+    self.fig.savefig(image_path)
+
+    self.frame_nb += 1
+
+  def display_features(self):
+    if not hasattr(self, 'agent_features'):
+      if isinstance(self, ExpertRunner):
+        self.agent_features = self._agent.online_convnet(self._agent.state_ph).features
+      elif isinstance(self, LLAMNRunner):
+        self.agent_features = self._agent.convnet(self._agent.state_ph).features
+
+    features = self._sess.run(self.agent_features, feed_dict={self._agent.state_ph: self._agent.state})
+
+    if not hasattr(self, 'plt_figure'):
+      plt.gcf().clear()
+      self.plt_figure = plt.imshow(features.reshape(16, 32), cmap='bwr')
+      self.colorbar = plt.colorbar()
+      plt.clim(-2, 5)
+      plt.show(block=False)
+      plt.pause(0.01)
+    else:
+      self.plt_figure.set_data(features.reshape(16, 32))
+      plt.draw()
+      plt.pause(0.01)
 
 
 class SaliencyAgent:
