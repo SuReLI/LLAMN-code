@@ -213,7 +213,7 @@ class ExpertRunner(TrainRunner):
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
-    env_name = self._environment.environment.game.capitalize()
+    env_name = self._environment.environment._game
     summary = tf.compat.v1.Summary(value=[
         tf.compat.v1.Summary.Value(
             tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes),
@@ -340,7 +340,7 @@ class LLAMNRunner(TrainRunner):
           continue
 
         for _ in range(self._nb_steps_per_steps):
-          # print("Running one step on ", self._environment.environment.game)
+          # print("Running one step on ", self._environment.environment._game)
           observation, reward, is_terminal = self._run_one_step(actions[self._game_index])
 
           total_reward[self._game_index] += reward
@@ -480,7 +480,7 @@ class LLAMNRunner(TrainRunner):
     """Save statistics as tensorboard summaries."""
     for i in range(len(num_episodes)):
 
-      env_name = self._environments[i].environment.game.capitalize()
+      env_name = self._environments[i].environment._game
       summary = tf.compat.v1.Summary(value=[
           tf.compat.v1.Summary.Value(
               tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes[i]),

@@ -68,7 +68,8 @@ class ExpertNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    features = self.dense1(x)
+    features = x
+    x = self.dense1(x)
 
     if self.init_option == 3 and self.llamn_network:
       llamn_pre_features = self.llamn_network(state).pre_features
@@ -76,7 +77,7 @@ class ExpertNetwork(tf.keras.Model):
       features = tf.concat([features, llamn_pre_features], axis=1)
       features = self.dense_features(features)
 
-    output = self.dense_output(features)
+    output = self.dense_output(x)
     logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
@@ -110,9 +111,6 @@ class AMNNetwork(tf.keras.Model):
     self.dense1 = tf.keras.layers.Dense(
         feature_size, activation=activation_fn,
         kernel_initializer=self.kernel_initializer, name='dense_1')
-    self.dense_features = tf.keras.layers.Dense(
-        feature_size, kernel_initializer=self.kernel_initializer,
-        name='dense_feat')
 
     # Not distributional
     if not self.num_atoms:
@@ -132,18 +130,18 @@ class AMNNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    pre_features = self.dense1(x)
-    features = self.dense_features(pre_features)
+    features = x
+    pre_output = self.dense1(x)
 
     if not self.num_atoms:
-      q_values = self.dense_output(pre_features)
+      q_values = self.dense_output(pre_output)
 
-      return AMNNetworkType(pre_features, q_values, features)
+      return AMNNetworkType(pre_output, q_values, features)
 
     else:
-      output = self.dense_output(pre_features)
+      output = self.dense_output(pre_output)
       logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
       probabilities = tf.keras.activations.softmax(logits)
       q_values = tf.reduce_sum(self.support * probabilities, axis=2)
 
-      return AMNNetworkDistributionalType(pre_features, q_values, probabilities, features)
+      return AMNNetworkDistributionalType(pre_output, q_values, probabilities, features)
