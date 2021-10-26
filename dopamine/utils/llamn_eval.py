@@ -65,12 +65,12 @@ def main(_):
   gin.bind_parameter('Runner.max_steps_per_episode', FLAGS.max_steps)
   gin.bind_parameter('LLAMNRunner.max_steps_per_episode', FLAGS.max_steps)
 
-  runner = llamn_eval_lib.EvalRunner(nb_actions=nb_actions,
-                                     name_filter=FLAGS.filter,
-                                     name_exclude=FLAGS.exclude,
-                                     num_eps=FLAGS.num_eps,
-                                     delay=FLAGS.delay,
-                                     root_dir=expe_dir)
+  runner = llamn_eval_lib.MainEvalRunner(nb_actions=nb_actions,
+                                         name_filter=FLAGS.filter,
+                                         name_exclude=FLAGS.exclude,
+                                         num_eps=FLAGS.num_eps,
+                                         delay=FLAGS.delay,
+                                         root_dir=expe_dir)
 
   for day, games in enumerate(all_games):
     for phase in ('day', 'night'):

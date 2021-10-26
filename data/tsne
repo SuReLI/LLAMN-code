@@ -1,0 +1,44 @@
+#!/bin/bash
+
+if [ -z "$1" ]
+then
+    echo "Usage: ./tsne [path]"
+    exit 1
+fi
+
+game_name=$(basename "$1")
+
+if [ ! -f "states/${game_name}.npy" ]
+then
+    echo "States have not been generated for game ${game_name}"
+    exit 1
+fi
+
+if [ ! -f "states/${game_name}.jpg" ]
+then
+    echo "Generating sprite for game ${game_name}..."
+    ./to_sprite.py states/${game_name}.npy
+    echo "Done!"
+fi
+
+if [ ! -f "${1}features.tsv" -o ! -f "${1}actions.tsv" ]
+then
+    echo "The features have not been converted to tab format. Converting..."
+    ./to_tab.py "$1"
+    echo "Done!"
+fi
+
+cat <<EOF > projector_config.pbtxt
+embeddings {
+    tensor_path: "${1}features.tsv"
+    metadata_path: "${1}actions.tsv"
+    sprite {
+        image_path: "states/${game_name}.jpg"
+        single_image_dim: 84
+        single_image_dim: 84
+    }
+}
+EOF
+
+(sleep 2 && brave-browser http://localhost:6006/\#projector) &
+tensorboard --logdir .

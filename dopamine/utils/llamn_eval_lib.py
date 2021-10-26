@@ -160,7 +160,7 @@ def should_evaluate(phase, game, name_filter, name_exclude):
   return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 
-class EvalRunner:
+class MainEvalRunner:
 
   def __init__(self, nb_actions, name_filter, name_exclude, num_eps, delay, root_dir):
     self.nb_actions = nb_actions
@@ -196,15 +196,15 @@ class EvalRunner:
 
     elif mode == 'features':
       print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
+      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       runner._agent._build_features_op()
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
       features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.pre_output,
                                                    feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.pre_output,
                                                    feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
@@ -236,15 +236,15 @@ class EvalRunner:
     elif mode == 'features':
       game = games[agent_ind]
       print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data', *phase_dir.split('/')[1:], game.name)
+      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       runner._agent._build_features_op()
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
       features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.pre_output,
                                                    feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.pre_output,
                                                    feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 

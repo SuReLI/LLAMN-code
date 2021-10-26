@@ -115,7 +115,7 @@ def should_evaluate(game, name_filter, name_exclude):
   return re.search(name_filter, game, re.I) and not re.search(name_exclude, game, re.I)
 
 
-class EvalRunner:
+class MainEvalRunner:
 
   def __init__(self, name_filter, name_exclude, num_eps, delay, root_dir):
     self.name_filter = name_filter
@@ -130,7 +130,7 @@ class EvalRunner:
 
     if mode == 'features':
       print(f"  \033[34m{game.name}\033[0m", sep='')
-      result_dir = os.path.join('data', *base_dir.split('/')[1:])
+      result_dir = os.path.join('data/runs', *base_dir.split('/')[1:])
       os.makedirs(result_dir, exist_ok=True)
       runner._agent._build_features_op()
       state_file = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy')

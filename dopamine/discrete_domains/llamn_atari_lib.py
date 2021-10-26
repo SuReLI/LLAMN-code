@@ -10,11 +10,11 @@ import tensorflow as tf
 
 
 ExpertNetworkType = collections.namedtuple(
-    'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
+    'expert_network', ['features', 'pre_output', 'q_values', 'logits', 'probabilities'])
 AMNNetworkType = collections.namedtuple(
-    'amn_network', ['pre_features', 'q_values', 'features'])
+    'amn_network', ['pre_output', 'q_values', 'features'])
 AMNNetworkDistributionalType = collections.namedtuple(
-    'amn_network', ['pre_features', 'q_values', 'probabilities', 'features'])
+    'amn_network', ['pre_output', 'q_values', 'probabilities', 'features'])
 
 
 class ExpertNetwork(tf.keras.Model):
@@ -70,11 +70,13 @@ class ExpertNetwork(tf.keras.Model):
     x = self.flatten(x)
     features = x
     x = self.dense1(x)
+    pre_output = x
 
     if self.init_option == 3 and self.llamn_network:
-      llamn_pre_features = self.llamn_network(state).pre_features
-      llamn_pre_features = tf.stop_gradient(llamn_pre_features)
-      features = tf.concat([features, llamn_pre_features], axis=1)
+      raise Exception("Option not valid anymore")
+      llamn_pre_output = self.llamn_network(state).pre_output
+      llamn_pre_output = tf.stop_gradient(llamn_pre_output)
+      features = tf.concat([features, llamn_pre_output], axis=1)
       features = self.dense_features(features)
 
     output = self.dense_output(x)
@@ -82,7 +84,7 @@ class ExpertNetwork(tf.keras.Model):
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
 
-    return ExpertNetworkType(features, q_values, logits, probabilities)
+    return ExpertNetworkType(features, pre_output, q_values, logits, probabilities)
 
 
 class AMNNetwork(tf.keras.Model):

@@ -30,7 +30,7 @@ vmax = 10.
 expert_init_option = 2
 distributional_night = True
 
-# Important 
+# Important
 AMNAgent.replay_scheme = 'prioritized'   # Night PER
 AMNAgent.llamn_init_copy = True          # Copy weights of AMN between nights
 AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum

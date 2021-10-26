@@ -7,4 +7,9 @@ eval
 eval_transfer
 
 etc/
-data/
+data/*
+!data/change_default_nb.sh
+!data/display_pca.py
+!data/to_sprite.py
+!data/to_tab.py
+!data/tsne
