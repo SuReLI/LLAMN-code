@@ -208,7 +208,8 @@ class ExpertRunner(TrainRunner):
     tf.compat.v1.reset_default_graph()
     super().__init__(base_dir, create_expert_fn, environment.create)
 
-    self._agent._load_llamn()
+    if self._start_iteration == 0:
+      self._agent._load_llamn()
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
