@@ -27,7 +27,7 @@ from multiprocessing import Process, Lock
 from absl import logging
 
 from dopamine.agents.llamn_network import expert_rainbow_agent, llamn_agent
-from dopamine.discrete_domains.llamn_game_lib import create_game
+from dopamine.discrete_domains.llamn_game_lib import create_games
 from dopamine.discrete_domains.run_experiment import TrainRunner
 
 import numpy as np
@@ -56,8 +56,7 @@ class MasterRunner:
     self.parallel = parallel
     self.sentinel = os.path.join(base_dir, 'progress')
 
-    self.games = [[create_game(game_name, sticky_actions) for game_name in list_names]
-                  for list_names in games_names]
+    self.games = [create_games(list_names) for list_names in games_names]
 
     self.max_num_actions = max([game.num_actions for game_list in self.games
                                 for game in game_list])
@@ -214,7 +213,7 @@ class ExpertRunner(TrainRunner):
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
-    env_name = self._environment.environment._game
+    env_name = self._environment.name
     summary = tf.compat.v1.Summary(value=[
         tf.compat.v1.Summary.Value(
             tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes),
@@ -341,7 +340,7 @@ class LLAMNRunner(TrainRunner):
           continue
 
         for _ in range(self._nb_steps_per_steps):
-          # print("Running one step on ", self._environment.environment._game)
+          # print("Running one step on ", self._environment.name)
           observation, reward, is_terminal = self._run_one_step(actions[self._game_index])
 
           total_reward[self._game_index] += reward
@@ -481,7 +480,7 @@ class LLAMNRunner(TrainRunner):
     """Save statistics as tensorboard summaries."""
     for i in range(len(num_episodes)):
 
-      env_name = self._environments[i].environment._game
+      env_name = self._environments[i].name
       summary = tf.compat.v1.Summary(value=[
           tf.compat.v1.Summary.Value(
               tag=f'Train/{env_name}/NumEpisodes', simple_value=num_episodes[i]),

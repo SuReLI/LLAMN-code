@@ -17,13 +17,38 @@ from dopamine.discrete_domains.atari_lib import AtariPreprocessing
 gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_SHAPE', (60, 80))
 gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_DTYPE', tf.uint8)
 
+gin.constant('llamn_game_lib.PROCGEN_STACK_SIZE', 1)
+gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_SHAPE', (64, 64, 3))
+gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_DTYPE', tf.uint8)
 
-def create_game(game_name, sticky_actions=True):
+
+@gin.configurable
+def create_games(games_names):
+  games = []
+  for game_name in games_names:
+    # Range of levels (ProcGen)
+    if ':' in game_name:
+      env_name, infos = game_name.split('.')
+      num_levels, start_level = infos.split('-')
+      first_level, last_level = map(int, start_level.split(':'))
+      for level in range(first_level, last_level):
+        new_game_name =  f"{env_name}.{num_levels}-{level}"
+        games.append(create_game(new_game_name))
+
+    else:
+      games.append(create_game(game_name))
+  return games
+
+
+def create_game(game_name):
   if game_name.startswith('DuckieTown'):
     return DuckieTownGame(game_name)
 
+  elif game_name.startswith('Procgen'):
+    return ProcGenGame(game_name)
+
   else:
-    return AtariGame(game_name, sticky_actions)
+    return AtariGame(game_name, True)
 
 
 def build_variant(variant):
@@ -95,6 +120,28 @@ class DuckieTownGame(Game):
     return env
 
 
+class ProcGenGame(Game):
+
+  def __init__(self, game_name):
+    if '.' in game_name:
+      game_name, infos = game_name.split('.')
+      self.num_levels, self.start_level = map(int, infos.split('-'))
+    else:
+      self.num_levels, self.start_level = 0, 0
+
+    super().__init__(game_name)
+    self.name = f"{game_name}.{self.num_levels}-{self.start_level}"
+
+    self.env_name = f'procgen:{game_name.lower()}-v0'
+    env = gym.make(self.env_name)
+    self.num_actions = env.action_space.n
+
+  def create(self):
+    env = gym.make(self.env_name, start_level=self.start_level, num_levels=self.num_levels)
+    env.name = self.name
+    return env
+
+
 class AtariGame(Game):
 
   def __init__(self, game_name, sticky_actions):
@@ -107,4 +154,6 @@ class AtariGame(Game):
     self.num_actions = env.action_space.n
 
   def create(self):
-    return ModifiedAtariPreprocessing(gym.make(self.env_name).env, self.variant)
+    env = ModifiedAtariPreprocessing(gym.make(self.env_name).env, self.variant)
+    env.name = self.name
+    return env

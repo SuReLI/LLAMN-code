@@ -112,7 +112,7 @@ class MyExpertRunner(EvalRunner, ExpertRunner):
   def evaluate(self, num_eps):
     self._agent.eval_mode = True
 
-    game_name = self._environment.environment._game.capitalize()
+    game_name = self._environment.name.capitalize()
     print('  \033[34m', game_name, '\033[0m', sep='')
 
     total_steps = 0
@@ -146,7 +146,7 @@ class MyLLAMNRunner(EvalRunner, LLAMNRunner):
       print("    Reward:", reward)
 
     self._environment.close()
-    game_name = self._environment.environment._game.capitalize()
+    game_name = self._environment.name.capitalize()
     print("    ----------------")
     print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
     print("    Mean number of steps:", total_steps / num_eps)

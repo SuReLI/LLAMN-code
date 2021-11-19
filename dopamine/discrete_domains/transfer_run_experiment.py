@@ -28,7 +28,7 @@ from tensorflow.python.training import py_checkpoint_reader
 import gin.tf
 
 from dopamine.discrete_domains.run_experiment import TrainRunner, create_agent
-from dopamine.discrete_domains.llamn_game_lib import create_game
+from dopamine.discrete_domains.llamn_game_lib import create_games
 
 
 @gin.configurable
@@ -78,14 +78,16 @@ def load_expert(self, ckpt_dir, nb_layers=4):
 class MasterRunner:
 
   def __init__(self, base_dir, parallel, first_game_name=None,
-               transferred_games_names=[], sticky_actions=True):
+               transferred_games_names=None, sticky_actions=True):
 
     self.base_dir = base_dir
     self.parallel = parallel
 
-    self.first_game = create_game(first_game_name, sticky_actions)
-    self.transferred_games = [create_game(game_name, sticky_actions)
-                              for game_name in transferred_games_names]
+    if transferred_games_names is None:
+      transferred_games_names = []
+
+    self.first_game = create_games([first_game_name])[0]
+    self.transferred_games = create_games(transferred_games_names)
 
     self._save_gin_config()
 

@@ -90,7 +90,7 @@ class MyTrainRunner(TrainRunner):
   def evaluate(self, num_eps):
     self._agent.eval_mode = True
 
-    game_name = self._environment.environment._game.capitalize()
+    game_name = self._environment.name.capitalize()
     print(f"  \033[34m{game_name}\033[0m", sep='')
 
     total_steps = 0

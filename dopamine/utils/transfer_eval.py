@@ -15,7 +15,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from dopamine.utils import transfer_eval_lib
-from dopamine.discrete_domains.llamn_game_lib import create_game
+from dopamine.discrete_domains.llamn_game_lib import create_games
 
 
 flags.DEFINE_string('root_dir', 'results/', 'Root directory.')
@@ -46,11 +46,10 @@ def main(_):
   print(f'\033[91mVisualizing networks in directory {expe_dir}\033[0m')
 
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
-  first_game_name = gin.query_parameter('MasterRunner.first_game_name')
-  games_names = gin.query_parameter('MasterRunner.transferred_games_names')
+  first_game_name = gin.query_parameter('transfer_run_experiment.MasterRunner.first_game_name')
+  games_names = gin.query_parameter('transfer_run_experiment.MasterRunner.transferred_games_names')
 
-  all_games = [[create_game(first_game_name)],
-               [create_game(game_name) for game_name in games_names]]
+  all_games = [create_games([first_game_name]), create_games(games_names)]
 
   if FLAGS.mode == 'saliency':
     FLAGS.num_eps = 1
@@ -58,11 +57,11 @@ def main(_):
 
   gin.bind_parameter('Runner.max_steps_per_episode', FLAGS.max_steps)
 
-  runner = transfer_eval_lib.EvalRunner(name_filter=FLAGS.filter,
-                                        name_exclude=FLAGS.exclude,
-                                        num_eps=FLAGS.num_eps,
-                                        delay=FLAGS.delay,
-                                        root_dir=expe_dir)
+  runner = transfer_eval_lib.MainEvalRunner(name_filter=FLAGS.filter,
+                                            name_exclude=FLAGS.exclude,
+                                            num_eps=FLAGS.num_eps,
+                                            delay=FLAGS.delay,
+                                            root_dir=expe_dir)
 
   for nb_day, games in enumerate(all_games):
     runner.run(games, nb_day, FLAGS.mode)

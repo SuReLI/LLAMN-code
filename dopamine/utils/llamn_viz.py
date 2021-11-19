@@ -48,7 +48,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from dopamine.utils import llamn_viz_lib
-from dopamine.discrete_domains.llamn_game_lib import create_game
+from dopamine.discrete_domains.llamn_game_lib import create_games
 
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -83,8 +83,7 @@ def main(_):
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
   games_names = gin.query_parameter('MasterRunner.games_names')
 
-  games = [[create_game(game_name) for game_name in list_names]
-           for list_names in games_names]
+  games = [create_games(list_names) for list_names in games_names]
 
   nb_actions = max([game.num_actions for game_list in games
                     for game in game_list])

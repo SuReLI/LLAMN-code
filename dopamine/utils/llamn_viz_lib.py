@@ -146,7 +146,7 @@ class MyExpertRunner(ExpertRunner):
     self._start_iteration = 0
 
   def visualize(self, record_path, num_global_steps=500):
-    game_name = self._environment.environment._game
+    game_name = self._environment.name
     print('  \033[34m', game_name, '\033[0m', sep='')
 
     MyRunner.visualize(self, record_path, num_global_steps)
