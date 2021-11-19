@@ -41,4 +41,6 @@ do
 
     ln -sf "actions_${nb_states}.tsv" "${dir}/actions.tsv"
     ln -sf "features_${nb_states}.tsv" "${dir}/features.tsv"
+
+    ln -sf "qvalues_${nb_states}.npy" "${dir}/qvalues.npy"
 done

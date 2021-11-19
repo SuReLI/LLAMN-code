@@ -21,7 +21,7 @@ from dopamine.utils.example_viz_lib import MyDQNAgent, MyRainbowAgent
 from dopamine.utils.eval_lib import SaliencyAgent, EvalRunner
 
 
-NB_STATES = 100
+NB_STATES = 70
 assert (NB_STATES % 2 == 0), "NB_STATES must be even"
 
 NB_STATES_2 = NB_STATES**2
@@ -94,6 +94,7 @@ class MyLLAMNAgent(SaliencyAgent, AMNAgent):
     state_shape = (NB_STATES_2//2, *self.observation_shape, 4)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.convnet(self.all_states_ph)
+    self.all_qvalues = []
     self.all_q_argmax = []
 
     for i in range(self.nb_experts):
@@ -101,6 +102,7 @@ class MyLLAMNAgent(SaliencyAgent, AMNAgent):
                      for n_action in range(self.llamn_num_actions)]
 
       partial_q_values = tf.boolean_mask(self.all_outputs.q_values, expert_mask, axis=1)
+      self.all_qvalues.append(partial_q_values)
       q_argmax = tf.argmax(partial_q_values, axis=1)
       self.all_q_argmax.append(q_argmax)
 
@@ -214,6 +216,13 @@ class MainEvalRunner:
       actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
+
+      q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
+      q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.q_values,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.q_values,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
       return
 
     elif mode == 'saliency':
@@ -254,6 +263,13 @@ class MainEvalRunner:
       actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
+
+      q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
+      q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
       return
 
     elif mode == 'saliency':
