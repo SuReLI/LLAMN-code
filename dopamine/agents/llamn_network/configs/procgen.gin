@@ -9,7 +9,7 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Games
-MasterRunner.games_names = [['Procgen-Coinrun.1-0:10'], ['Procgen-Coinrun.1-10']]
+SplitMasterRunner.games_names = [['Procgen-Coinrun.1-0:10'], ['Procgen-Coinrun.1-10']]
 
 # Runner
 Runner.num_iterations = 30
@@ -83,5 +83,5 @@ AMNAgent.optimizer = @tf.train.AdamOptimizer()
 AMNAgent.stack_size = %stack_size
 
 # Replay Buffer
-WrappedPrioritizedReplayBuffer.replay_capacity = 1000000
+WrappedPrioritizedReplayBuffer.replay_capacity = 50000
 WrappedPrioritizedReplayBuffer.batch_size = 32
