@@ -24,7 +24,7 @@ SBATCH_SCRIPT = """\
 #SBATCH --cpus-per-task=12
 
 #SBATCH --gres=gpu:1
-#SBATCH --mem=15000
+#SBATCH --mem={memory}
 
 #SBATCH --begin=now
 
@@ -42,8 +42,7 @@ module load cuda/11.2
 
 source $HOME/.venv/main/bin/activate
 
-echo "$HOME/LLAMN-code/split_main --base_dir {base_dir} --gin_files={gin_file} --phase {phase} --index {index}"
-sleep $((RANDOM % 5))
+$HOME/LLAMN-code/split_main --base_dir {base_dir} --gin_files {gin_file} --phase {phase} --index {index}
 """
 
 
@@ -72,19 +71,27 @@ def get_base_dir(base_dir, resume, ckpt_dir):
 
   else:
     expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    base_dir = os.path.join(base_dir, expe_time)
+    base_dir = os.path.join(base_dir, expe_time) + os.sep
 
   return base_dir
 
 
 def write_sbatch_script(base_dir, gin_file, phase_index, game_index, dependencies):
 
+    # Day
     if game_index >= 0:
         phase = f'day_{phase_index}'
         job_name = f"day-{phase_index}_game-{game_index}"
+        memory = 15000
+        time = '02:00:00'
+
+    # Night
     else:
         phase = f'night_{phase_index}'
         job_name = f"night-{phase_index}"
+        memory = 60000
+        time = '4-04:00:00'
+
     name = 'AMN_' + job_name
 
     if dependencies is not None:
@@ -97,7 +104,8 @@ def write_sbatch_script(base_dir, gin_file, phase_index, game_index, dependencie
                                   phase=phase,
                                   index=game_index,
                                   dependency_line=dependency_line,
-                                  time='03:00:00',
+                                  time=time,
+                                  memory=memory,
                                   name=name
                                   )
 

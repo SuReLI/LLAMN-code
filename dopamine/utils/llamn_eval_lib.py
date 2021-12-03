@@ -226,6 +226,20 @@ class MainEvalRunner:
       return
 
     elif mode == 'saliency':
+      print('  \033[34m', game.name, '\033[0m', sep='')
+      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
+      os.makedirs(result_dir, exist_ok=True)
+      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
+      saliency_dir = os.path.join(result_dir, 'saliency_activations.npy')
+
+      saliency_sums = np.empty(100)
+      for i, state in enumerate(all_states[:100, :, :, :]):
+        saliency = runner._agent.compute_saliency(state[np.newaxis])
+        saliency_sums[i] = saliency.sum()
+      np.save(saliency_dir, saliency_sums)
+      return
+
+    elif mode == 'saliency_ep':
       saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
       os.makedirs(saliency_dir, exist_ok=True)
       runner.saliency_path = os.path.join(saliency_dir, "saliency")
@@ -273,6 +287,22 @@ class MainEvalRunner:
       return
 
     elif mode == 'saliency':
+      game = games[agent_ind]
+      runner._agent.ind_expert = agent_ind
+      print('  \033[34m', game.name, '\033[0m', sep='')
+      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
+      os.makedirs(result_dir, exist_ok=True)
+      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
+      saliency_dir = os.path.join(result_dir, f'saliency_activations.npy')
+
+      saliency_sums = np.empty(100)
+      for i, state in enumerate(all_states[:100, :, :, :]):
+        saliency = runner._agent.compute_saliency(state[np.newaxis])
+        saliency_sums[i] = saliency.sum()
+      np.save(saliency_dir, saliency_sums)
+      return
+
+    elif mode == 'saliency_ep':
       game = games[agent_ind]
       saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
       os.makedirs(saliency_dir, exist_ok=True)

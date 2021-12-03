@@ -41,8 +41,7 @@ class SplitMasterRunner:
     self.curr_day = int(phase.split('_')[1])
 
     if self.is_day:
-      phase_index = 2 * self.curr_day
-      self.day_game = self.games[phase_index][index]
+      self.day_game = self.games[self.curr_day][index]
 
     else:
       self.max_num_actions = max([game.num_actions for game_list in self.games

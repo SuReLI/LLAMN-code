@@ -62,8 +62,7 @@ def main(unused_argv):
   tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
   base_dir = FLAGS.base_dir
-  if not os.path.exists(base_dir):
-    os.mkdir(base_dir)
+  os.makedirs(base_dir, exist_ok=True)
 
   print(f'\033[91mRunning in directory {base_dir}\033[0m')
 

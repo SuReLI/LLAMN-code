@@ -24,7 +24,7 @@ flags.DEFINE_string('exclude', '^$', 'Which networks to not test.', short_name='
 flags.DEFINE_integer('num_eps', 3, 'Number of episodes to run.')
 flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
 flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
-flags.DEFINE_enum('mode', None, ['save_state', 'saliency', 'features'], 'The mode of evaluation')
+flags.DEFINE_enum('mode', None, ['save_state', 'saliency_ep', 'saliency', 'features'], 'The mode of evaluation')
 flags.DEFINE_boolean('features_heatmap', False, 'Display features heatmap')
 
 FLAGS = flags.FLAGS
@@ -57,7 +57,7 @@ def main(_):
   if FLAGS.mode == 'save_state':
     gin.bind_parameter('WrappedPrioritizedReplayBuffer.batch_size', llamn_eval_lib.NB_STATES_2)
 
-  elif FLAGS.mode == 'saliency':
+  elif FLAGS.mode == 'saliency_ep':
     FLAGS.num_eps = 1
     FLAGS.max_steps = min(500, FLAGS.max_steps)
 

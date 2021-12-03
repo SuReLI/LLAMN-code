@@ -137,7 +137,8 @@ class ProcGenGame(Game):
     self.num_actions = env.action_space.n
 
   def create(self):
-    env = gym.make(self.env_name, start_level=self.start_level, num_levels=self.num_levels)
+    env = gym.make(self.env_name, distribution_mode='easy',
+                   start_level=self.start_level, num_levels=self.num_levels)
     env.name = self.name
     return env
 

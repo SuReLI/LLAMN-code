@@ -1,0 +1,5 @@
+#!/bin/bash
+
+echo Running llamn:
+python3 -um dopamine.discrete_domains.split_llamn_train "$@"
+

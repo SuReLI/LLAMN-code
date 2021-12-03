@@ -29,6 +29,8 @@ def parse_args():
     parser.add_argument('-m', '--merge', type=str, action='append',
                         help="Actions to merge together")
     group = parser.add_mutually_exclusive_group()
+    group.add_argument('-s', '--saliency', action='store_true',
+                       help="Compute sum of saliency activations")
     group.add_argument('-v', '--variance', action='store_true',
                         help="Compare only variance")
     group.add_argument('-c', '--correlation', action='store_true',
@@ -194,6 +196,21 @@ def disp_corr(feature_files, qvalues_files, save_file=None):
     ax.yaxis.set_ticklabels(game_names, rotation=90)
     plt.show()
 
+def disp_saliencies(phase_id, day_dir, night_dir, blocking=True):
+    games = os.listdir(day_dir)
+
+    fig, axes = plt.subplots(len(games))
+    fig.suptitle(f"Phase {phase_id}")
+    for i, game in enumerate(games):
+        day_data = np.load(os.path.join(day_dir, game, 'saliency_activations.npy'))
+        night_data = np.load(os.path.join(night_dir, game, 'saliency_activations.npy'))
+        axes[i].plot(day_data, label='Day')
+        axes[i].plot(night_data, label='Night')
+        axes[i].set_title(game)
+        axes[i].legend()
+
+    plt.show(block=blocking)
+
 
 def main():
     args = parse_args()
@@ -242,6 +259,18 @@ def main():
             qvalues_files.append(os.path.join(feature_dir, 'qvalues.npy'))
 
         disp_corr(feature_files, qvalues_files, args.save_file)
+
+    elif args.saliency:
+        expe_dirs = []
+        for expe_dir in args.files:
+            nb_phases = len(os.listdir(expe_dir)) // 2
+
+            for phase_id in range(nb_phases):
+                blocking = (nb_phases > 4) or phase_id == nb_phases - 1
+                day_dir = os.path.join(expe_dir, f'day_{phase_id}')
+                night_dir = os.path.join(expe_dir, f'night_{phase_id}')
+
+                disp_saliencies(phase_id, day_dir, night_dir, blocking)
 
     else:
         for feature_file in args.files:

@@ -61,6 +61,10 @@ class EvalRunner:
     self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
     self.fig.savefig(image_path)
 
+    activation_file = f"{self.saliency_path}_activations"
+    with open(activation_file, 'a') as file:
+      file.write(str(saliency_map.sum()) + '\n')
+
     self.frame_nb += 1
 
   def display_features(self):
@@ -114,7 +118,9 @@ class SaliencyAgent:
 
     if isinstance(self, RainbowAgent):
       perturbed_q_values = self.online_convnet(final_states).q_values
-      error = tf.norm(perturbed_q_values - self._net_outputs.q_values, axis=1)
+      perturbed_softmax = tf.nn.softmax(perturbed_q_values)
+      output_softmax = tf.nn.softmax(self._net_outputs.q_values)
+      error = tf.norm(perturbed_softmax - output_softmax, ord=1, axis=1)
       self.saliency_map = tf.reshape(error, (84, 84))
 
     elif isinstance(self, AMNAgent):
@@ -125,7 +131,9 @@ class SaliencyAgent:
                        for n_action in range(self.llamn_num_actions)]
 
         partial_q_values = tf.boolean_mask(perturbed_q_values, expert_mask, axis=1)
-        error = tf.norm(partial_q_values - self._net_q_output[i], axis=1)
+        perturbed_softmax = tf.nn.softmax(partial_q_values)
+        output_softmax = tf.nn.softmax(self._net_q_output[i])
+        error = tf.norm(perturbed_softmax - output_softmax, ord=1, axis=1)
         self.saliency_map.append(tf.reshape(error, (84, 84)))
 
   def compute_saliency(self, state):
