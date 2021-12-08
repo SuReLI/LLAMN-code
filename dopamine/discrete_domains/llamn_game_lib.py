@@ -23,7 +23,7 @@ gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_DTYPE', tf.uint8)
 
 
 @gin.configurable
-def create_games(games_names):
+def create_games(games_names, render=False):
   games = []
   for game_name in games_names:
     # Range of levels (ProcGen)
@@ -33,19 +33,19 @@ def create_games(games_names):
       first_level, last_level = map(int, start_level.split(':'))
       for level in range(first_level, last_level):
         new_game_name =  f"{env_name}.{num_levels}-{level}"
-        games.append(create_game(new_game_name))
+        games.append(create_game(new_game_name, render))
 
     else:
-      games.append(create_game(game_name))
+      games.append(create_game(game_name, render))
   return games
 
 
-def create_game(game_name):
+def create_game(game_name, render=False):
   if game_name.startswith('DuckieTown'):
     return DuckieTownGame(game_name)
 
   elif game_name.startswith('Procgen'):
-    return ProcGenGame(game_name)
+    return ProcGenGame(game_name, render)
 
   else:
     return AtariGame(game_name, True)
@@ -122,12 +122,14 @@ class DuckieTownGame(Game):
 
 class ProcGenGame(Game):
 
-  def __init__(self, game_name):
+  def __init__(self, game_name, render=False):
     if '.' in game_name:
       game_name, infos = game_name.split('.')
       self.num_levels, self.start_level = map(int, infos.split('-'))
     else:
       self.num_levels, self.start_level = 0, 0
+
+    self.render = render if render else None
 
     super().__init__(game_name)
     self.name = f"{game_name}.{self.num_levels}-{self.start_level}"
@@ -138,7 +140,8 @@ class ProcGenGame(Game):
 
   def create(self):
     env = gym.make(self.env_name, distribution_mode='easy',
-                   start_level=self.start_level, num_levels=self.num_levels)
+                   start_level=self.start_level, num_levels=self.num_levels,
+                   render=self.render)
     env.name = self.name
     return env
 

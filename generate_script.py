@@ -90,7 +90,7 @@ def write_sbatch_script(base_dir, gin_file, phase_index, game_index, dependencie
         phase = f'night_{phase_index}'
         job_name = f"night-{phase_index}"
         memory = 60000
-        time = '4-04:00:00'
+        time = '14:00:00'
 
     name = 'AMN_' + job_name
 
