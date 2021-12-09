@@ -4,7 +4,7 @@ import dopamine.agents.rainbow.rainbow_agent
 import dopamine.discrete_domains.llamn_game_lib
 import dopamine.discrete_domains.atari_lib
 import dopamine.discrete_domains.run_experiment
-import dopamine.discrete_domains.transfer_run_experiment
+import dopamine.discrete_domains.split_transfer_run_experiment
 import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
@@ -31,9 +31,9 @@ RainbowAgent.optimizer = @tf.train.AdamOptimizer()
 tf.train.AdamOptimizer.learning_rate = 0.0000625
 tf.train.AdamOptimizer.epsilon = 0.00015
 
-transfer_run_experiment.MasterRunner.first_game_name = 'Procgen-Coinrun.1-0'
-transfer_run_experiment.MasterRunner.transferred_games_names = ['Procgen-Coinrun.1-1:51']
-transfer_run_experiment.load_expert.nb_layers = 5
+split_transfer_run_experiment.SplitMasterRunner.first_game_name = 'Procgen-Coinrun.1-0'
+split_transfer_run_experiment.SplitMasterRunner.transferred_games_names = ['Procgen-Coinrun.1-1:51']
+split_transfer_run_experiment.load_expert.nb_layers = 5
 
 # Sticky actions with probability 0.25, as suggested by (Machado et al., 2017).
 create_agent.agent_name = 'rainbow'

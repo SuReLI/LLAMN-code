@@ -19,16 +19,13 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from multiprocessing import Process
-
-from absl import logging
 
 import tensorflow as tf
 from tensorflow.python.training import py_checkpoint_reader
 import gin.tf
 
-from dopamine.discrete_domains.run_experiment import TrainRunner, create_agent
 from dopamine.discrete_domains.llamn_game_lib import create_games
+from dopamine.discrete_domains.run_experiment import TrainRunner, create_agent
 
 
 @gin.configurable
@@ -75,13 +72,14 @@ def load_expert(self, ckpt_dir, nb_layers=4):
 
 
 @gin.configurable
-class MasterRunner:
+class SplitMasterRunner:
 
-  def __init__(self, base_dir, parallel, first_game_name=None,
+  def __init__(self, base_dir, phase, index, first_game_name=None,
                transferred_games_names=None, sticky_actions=True):
 
     self.base_dir = base_dir
-    self.parallel = parallel
+    self.phase = phase
+    self.index = index
 
     if transferred_games_names is None:
       transferred_games_names = []
@@ -107,36 +105,18 @@ class MasterRunner:
     runner.run_experiment()
 
   def run_experiment(self):
-
-    logging.info('Beginning Master Runner')
     print('Beginning Master Runner')
 
-    # Run first expert
-    print("Running first expert")
     first_game_dir = os.path.join(self.base_dir, "day_0")
-    if self.parallel:
-      proc = Process(target=self.run_expert, args=(first_game_dir, self.first_game))
-      proc.start()
-      proc.join()
-
-    else:
+    # Run first expert
+    if self.phase == "day_0":
+      print("Running first expert")
       self.run_expert(first_game_dir, self.first_game)
 
-    TrainRunner.load_expert = load_expert
-
-    print("Running next experts")
-    next_game_dir = os.path.join(self.base_dir, "day_1")
-    if self.parallel:
-      # Run transferred games in different processes
-      processes = [Process(target=self.run_expert,
-                           args=(os.path.join(next_game_dir, game.name), game, first_game_dir))
-                   for game in self.transferred_games]
-
-      for proc in processes:
-        proc.start()
-      for proc in processes:
-        proc.join()
-
     else:
-      for game in self.transferred_games:
-        self.run_expert(os.path.join(next_game_dir, game.name), game, first_game_dir)
+      print("Running next expert", self.index)
+      TrainRunner.load_expert = load_expert
+
+      next_game_dir = os.path.join(self.base_dir, "day_1")
+      game = self.transferred_games[self.index]
+      self.run_expert(os.path.join(next_game_dir, game.name), game, first_game_dir)

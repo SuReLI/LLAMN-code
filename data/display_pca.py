@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.tri as tri
 
-from sklearn import decomposition
-from sklearn.preprocessing import StandardScaler
+from sklearn import decomposition, cross_decomposition
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 
 MERGING = {"Pong": [(1, 0), (4, 2), (5, 3)]}
@@ -29,6 +29,8 @@ def parse_args():
     parser.add_argument('-m', '--merge', type=str, action='append',
                         help="Actions to merge together")
     group = parser.add_mutually_exclusive_group()
+    group.add_argument('--pls', action='store_true',
+                       help="Display PLS instead of PCA")
     group.add_argument('-s', '--saliency', action='store_true',
                        help="Compute sum of saliency activations")
     group.add_argument('-v', '--variance', action='store_true',
@@ -72,6 +74,7 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
     pca = decomposition.PCA(n_components=n_components)
     features_std = StandardScaler().fit_transform(features)
     components = pca.fit_transform(features_std)
+
     exp_var = [v*100 for v in pca.explained_variance_ratio_]
     total_var = sum(pca.explained_variance_ratio_) * 100
     print(f"Experiment {os.path.dirname(feature_file)}")
@@ -99,6 +102,79 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
     for var in exp_var:
         title += f"{var:.2f}%, "
     ax.set_title(title)
+
+    env = gym.make(f"{game_name}-v0")
+    meanings = np.array(env.unwrapped.get_action_meanings())
+    meanings = meanings[np.unique(actions)]
+    ax.legend(handles=scatter.legend_elements()[0], labels=meanings.tolist())
+    if save_file:
+        if save_file == 'default':
+            n = int(features.shape[0] ** 0.5)
+            save_file = f"all_figs/{os.path.dirname(feature_file)}/feature{'3D' if n_components == 3 else ''}_{n}.pickle"
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
+        print("Saving in", save_file)
+        with open(save_file, 'wb') as file:
+            pickle.dump(fig, file)
+    else:
+        n_states = int(actions.shape[0]**0.5)
+        states = load_states(game_name, n_states)
+
+        callback = functools.partial(onpick, states)
+        fig.canvas.mpl_connect('pick_event', callback)
+        plt.show(block=blocking)
+        plt.pause(0.01)
+
+def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
+             save_file=None, merge=None, blocking=True):
+    features = np.load(feature_file)
+    actions = np.load(action_file).astype(np.int32)
+    qvalues = np.load(qvalues_file)
+    game_name = feature_file.split('/')[-2]
+
+    if merge:
+        try:
+            if merge == ['default']:
+                merge = MERGING.get(game_name, [])
+            else:
+                merge = [tuple(map(int, elt.split(','))) for elt in merge]
+        except ValueError:
+            raise ValueError("Invalid syntax for action merge") from None
+
+        for elt in merge:
+            actions[actions == elt[0]] = elt[1]
+
+    pls = cross_decomposition.PLSRegression(n_components=n_components)
+    if False:
+        target = qvalues
+    else:
+        target = OneHotEncoder().fit_transform(actions.reshape(-1, 1)).toarray()
+    components = pls.fit_transform(features, target)[0]
+
+    breakpoint()
+    explained_variance_ratio = np.var(components, axis=0) / np.var(features, axis=0).sum()
+    exp_var = [v*100 for v in explained_variance_ratio]
+    total_var = sum(explained_variance_ratio) * 100
+    print(f"Experiment {os.path.dirname(feature_file)}")
+    print(f"Explained variance: {total_var:.2f}%")
+    print(f"Component wise: ", end='')
+    for v in explained_variance_ratio:
+        print(f"{v*100:.2f}%, ", end='')
+    print('\n')
+
+
+    fig = plt.figure(feature_file)
+    if n_components == 2:
+        ax = fig.add_subplot()
+        scatter = ax.scatter(components[:, 0], components[:, 1], c=actions, picker=True)
+        # scatter = ax.tricontour(components[:, 0], components[:, 1], actions)
+
+    elif n_components == 3:
+        ax = fig.add_subplot(projection='3d')
+        scatter = ax.scatter(components[:, 0], components[:, 1], components[:, 2], c=actions)
+
+    else:
+        print("Can't visualize in more than 3D")
+        return
 
     env = gym.make(f"{game_name}-v0")
     meanings = np.array(env.unwrapped.get_action_meanings())
@@ -287,8 +363,14 @@ def main():
                 action_file = feature_file.replace('features.', 'actions.')
                 assert os.path.exists(action_file), f"No action file found: {action_file}"
 
-                disp_pca(feature_file, action_file, args.nb_components,
-                        args.save_file, args.merge, blocking)
+                if not args.pls:
+                    disp_pca(feature_file, action_file, args.nb_components,
+                             args.save_file, args.merge, blocking)
+
+                else:
+                    qvalues_file = feature_file.replace('features.', 'qvalues.')
+                    disp_pls(feature_file, action_file, qvalues_file, args.nb_components,
+                             args.save_file, args.merge, blocking)
 
             # Matplotlib figure
             elif feature_file.endswith('.pickle'):

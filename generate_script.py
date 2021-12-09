@@ -42,7 +42,7 @@ module load cuda/11.2
 
 source $HOME/.venv/main/bin/activate
 
-$HOME/LLAMN-code/split_main --base_dir {base_dir} --gin_files {gin_file} --phase {phase} --index {index}
+{main_script} --base_dir {base_dir} --gin_files {gin_file} --phase {phase} --index {index}
 """
 
 
@@ -52,47 +52,55 @@ def parse_args():
     parser.add_argument('--gin_file', help='Gin file', required=True)
     parser.add_argument('--resume', action='store_true', help='Resume experiment')
     parser.add_argument('--ckpt_dir', default=None, help='Checkpoint to resume')
+    parser.add_argument('--transfer', action='store_true', help='Generate scripts for transfer')
 
     return parser.parse_args()
 
 
-def get_base_dir(base_dir, resume, ckpt_dir):
+def get_base_dir(base_dir, is_transfer, resume, ckpt_dir):
+  expe_name = "Transfer" if is_transfer else "AMN"
   if resume:
     if ckpt_dir is not None:
       if not os.path.exists(ckpt_dir):
         raise FileNotFoundError("No checkpoint found at this path")
       return ckpt_dir
 
-    path = os.path.join(base_dir, 'AMN_*')
+    path = os.path.join(base_dir, f'{expe_name}_*')
     expe_list = glob.glob(path)
     if not expe_list:
       raise FileNotFoundError("No checkpoint to resume")
     base_dir = max(expe_list)
 
   else:
-    expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    expe_time = expe_name + '_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     base_dir = os.path.join(base_dir, expe_time) + os.sep
 
   return base_dir
 
 
-def write_sbatch_script(base_dir, gin_file, phase_index, game_index, dependencies):
+def write_sbatch_script(base_dir, gin_file, is_transfer, phase_index, game_index, dependencies):
 
     # Day
     if game_index >= 0:
         phase = f'day_{phase_index}'
         job_name = f"day-{phase_index}_game-{game_index}"
         memory = 15000
-        time = '02:00:00'
+        time = '03:30:00' if is_transfer else '02:00:00'
 
     # Night
     else:
         phase = f'night_{phase_index}'
         job_name = f"night-{phase_index}"
         memory = 60000
-        time = '14:00:00'
+        time = '16:00:00'
 
-    name = 'AMN_' + job_name
+    if is_transfer:
+        name = "Transfer_" + job_name
+        main_script = "$HOME/LLAMN-code/split_transfer"
+
+    else:
+        name = "AMN_" + job_name
+        main_script = "$HOME/LLAMN-code/split_main"
 
     if dependencies is not None:
         dependency_line = "#SBATCH --dependency=afterok:" + ','.join(map(str, dependencies))
@@ -101,6 +109,7 @@ def write_sbatch_script(base_dir, gin_file, phase_index, game_index, dependencie
 
     script = SBATCH_SCRIPT.format(base_dir=base_dir,
                                   gin_file=gin_file,
+                                  main_script=main_script,
                                   phase=phase,
                                   index=game_index,
                                   dependency_line=dependency_line,
@@ -128,16 +137,7 @@ def submit_sbatch(script_file):
     return job_id
 
 
-def main():
-
-    args = parse_args()
-
-    gin.parse_config_file(args.gin_file, skip_unknown=True)
-    games = gin.query_parameter("SplitMasterRunner.games_names")
-
-    base_dir = get_base_dir(args.base_dir, args.resume, args.ckpt_dir)
-    print(f'\033[91mRunning in directory {base_dir}\033[0m')
-
+def run_amn(base_dir, games, args):
     day_dependency = None
     for phase_index, phase_games in enumerate(games):
 
@@ -159,17 +159,60 @@ def main():
         night_dependencies = []
         for game_index, game in enumerate(phase_games):
             print("Building and running sbatch for game", game)
-            script_file = write_sbatch_script(base_dir, args.gin_file,
+            script_file = write_sbatch_script(base_dir, args.gin_file, False,
                                               phase_index, game_index,
                                               day_dependency)
             night_dependencies.append(submit_sbatch(script_file))
 
         # Night
         print("Building and running night", ', '.join(phase_games))
-        script_file = write_sbatch_script(base_dir, args.gin_file,
+        script_file = write_sbatch_script(base_dir, args.gin_file, False,
                                           phase_index, -1,
                                           night_dependencies)
         day_dependency = [submit_sbatch(script_file)]
+
+
+def run_transfer(base_dir, first_game, transferred_games, args):
+    script_file = write_sbatch_script(base_dir, args.gin_file, True, 0, 0, None)
+    first_game_dependency = [submit_sbatch(script_file)]
+
+    # ProcGen Conversion
+    new_transferred_games = []
+    for game_name in transferred_games:
+        if ':' in game_name:
+            env_name, infos = game_name.split('.')
+            num_levels, start_level = infos.split('-')
+            first_level, last_level = map(int, start_level.split(':'))
+            for level in range(first_level, last_level):
+                new_game_name = f"{env_name}.{num_levels}-{level}"
+                new_transferred_games.append(new_game_name)
+        else:
+            new_transferred_games.append(game_name)
+    transferred_games = new_transferred_games
+
+    for game_index, game in enumerate(transferred_games):
+        print("Building and running sbatch for game", game)
+        script_file = write_sbatch_script(base_dir, args.gin_file, True,
+                                          1, game_index, first_game_dependency)
+        submit_sbatch(script_file)
+
+
+def main():
+    args = parse_args()
+
+    gin.parse_config_file(args.gin_file, skip_unknown=True)
+
+    base_dir = get_base_dir(args.base_dir, args.transfer, args.resume, args.ckpt_dir)
+    print(f'\033[91mRunning in directory {base_dir}\033[0m')
+
+    if args.transfer:
+        first_game = gin.query_parameter("split_transfer_run_experiment.SplitMasterRunner.first_game_name")
+        transferred_games = gin.query_parameter("split_transfer_run_experiment.SplitMasterRunner.transferred_games_names")
+        run_transfer(base_dir, first_game, transferred_games, args)
+
+    else:
+        games = gin.query_parameter("SplitMasterRunner.games_names")
+        run_amn(base_dir, games, args)
 
 
 if __name__ == '__main__':
