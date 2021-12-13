@@ -5,12 +5,9 @@ from __future__ import print_function
 
 import os
 import re
-import time
 
 import tensorflow as tf
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 
 from dopamine.discrete_domains import checkpointer
 from dopamine.agents.llamn_network.expert_rainbow_agent import ExpertAgent
@@ -219,9 +216,9 @@ class MainEvalRunner:
 
       q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
       q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.q_values,
-                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
       q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.q_values,
-                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
       return
 
@@ -280,9 +277,9 @@ class MainEvalRunner:
 
       q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
       q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
-                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
       q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
-                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
       return
 
@@ -293,7 +290,7 @@ class MainEvalRunner:
       result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_dir = os.path.join(result_dir, f'saliency_activations.npy')
+      saliency_dir = os.path.join(result_dir, 'saliency_activations.npy')
 
       saliency_sums = np.empty(100)
       for i, state in enumerate(all_states[:100, :, :, :]):

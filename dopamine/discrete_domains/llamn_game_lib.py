@@ -32,7 +32,7 @@ def create_games(games_names, render=False):
       num_levels, start_level = infos.split('-')
       first_level, last_level = map(int, start_level.split(':'))
       for level in range(first_level, last_level):
-        new_game_name =  f"{env_name}.{num_levels}-{level}"
+        new_game_name = f"{env_name}.{num_levels}-{level}"
         games.append(create_game(new_game_name, render))
 
     else:

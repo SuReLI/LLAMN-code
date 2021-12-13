@@ -106,17 +106,24 @@ class SplitMasterRunner:
 
   def run_experiment(self):
     print('Beginning Master Runner')
-
+    tf.compat.v1.reset_default_graph()
     first_game_dir = os.path.join(self.base_dir, "day_0")
-    # Run first expert
+
+    # First expert
     if self.phase == "day_0":
       print("Running first expert")
-      self.run_expert(first_game_dir, self.first_game)
 
+      runner = TrainRunner(first_game_dir, create_agent, self.first_game.create)
+      runner.run_experiment()
+
+    # Next experts
     else:
       print("Running next expert", self.index)
       TrainRunner.load_expert = load_expert
 
-      next_game_dir = os.path.join(self.base_dir, "day_1")
       game = self.transferred_games[self.index]
-      self.run_expert(os.path.join(next_game_dir, game.name), game, first_game_dir)
+      next_game_dir = os.path.join(self.base_dir, "day_1", game.name)
+
+      runner = TrainRunner(next_game_dir, create_agent, game.create)
+      runner.load_expert(first_game_dir)
+      runner.run_experiment()

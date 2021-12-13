@@ -22,6 +22,7 @@ matplotlib.use('TkAgg')
 def get_frame_nb(self):
   return self._frame_nb[self._game_index]
 
+
 def set_frame_nb(self, value):
   self._frame_nb[self._game_index] = value
 
@@ -91,37 +92,53 @@ class EvalRunner:
 
 class SaliencyAgent:
 
-  def _build_mask(self):
+  def _build_mask(self, shape):
     length = 35
     sigma = 5
     z = np.linspace(-length/2., length/2., length)
     xx, yy = np.meshgrid(z, z)
     gaussian_kernel = np.exp(-0.5 * (xx**2 + yy**2) / sigma**2)
-    n = 84 + 2*length
-    mask = np.zeros((84*84, n, n))
 
-    for i in range(84):
-      for j in range(84):
-        mask[i*84+j, i+length//2+1:i+3*length//2+1, j+length//2+1:j+3*length//2+1] = gaussian_kernel
-    mask = mask[:, length:length+84, length:length+84]
+    dim_x = shape[0]
+    dim_y = shape[1]
+    nx = dim_x + 2*length
+    ny = dim_y + 2*length
+    mask = np.zeros((dim_x*dim_y, nx, ny))
+
+    for i in range(dim_x):
+      for j in range(dim_y):
+        mask[i*dim_x+j, i+length//2+1:i+3*length//2+1, j+length//2+1:j+3*length//2+1] = gaussian_kernel
+    mask = mask[:, length:length+dim_x, length:length+dim_y]
+
+    # RGB images
+    if len(shape) == 3:
+      mask = np.repeat(mask[..., np.newaxis], shape[2], axis=-1)
 
     self.mask = tf.convert_to_tensor(mask, dtype=tf.float32)
 
-  def _build_saliency_op(self):
+  def _build_saliency_op(self, shape):
+    dim_x = shape[0]
+    dim_y = shape[1]
+
     sigma_blur = 5
-    float_state = tf.cast(self.state_ph[0, :, :, 3], tf.float32)
+    float_state = tf.cast(self.state_ph[0, ..., self.stack_size-1], tf.float32)
     blurred_state = tfa.image.gaussian_filter2d(float_state, (5, 5), sigma_blur)
     perturbed_state = float_state * (1 - self.mask) + blurred_state * self.mask
-    perturbed_state = tf.expand_dims(tf.cast(perturbed_state, tf.uint8), axis=3)
-    first_frames = tf.repeat(self.state_ph[:, :, :, :3], 84*84, axis=0)
-    final_states = tf.concat([first_frames, perturbed_state], axis=3)
+    perturbed_state = tf.expand_dims(tf.cast(perturbed_state, tf.uint8), axis=-1)
+
+    if self.stack_size > 1:
+      first_frames = tf.repeat(self.state_ph[..., :self.stack_size-1], dim_x*dim_y, axis=0)
+      final_states = tf.concat([first_frames, perturbed_state], axis=3)
+
+    else:
+      final_states = perturbed_state
 
     if isinstance(self, RainbowAgent):
       perturbed_q_values = self.online_convnet(final_states).q_values
       perturbed_softmax = tf.nn.softmax(perturbed_q_values)
       output_softmax = tf.nn.softmax(self._net_outputs.q_values)
       error = tf.norm(perturbed_softmax - output_softmax, ord=1, axis=1)
-      self.saliency_map = tf.reshape(error, (84, 84))
+      self.saliency_map = tf.reshape(error, (dim_x, dim_y))
 
     elif isinstance(self, AMNAgent):
       self.saliency_map = []
@@ -134,12 +151,13 @@ class SaliencyAgent:
         perturbed_softmax = tf.nn.softmax(partial_q_values)
         output_softmax = tf.nn.softmax(self._net_q_output[i])
         error = tf.norm(perturbed_softmax - output_softmax, ord=1, axis=1)
-        self.saliency_map.append(tf.reshape(error, (84, 84)))
+        self.saliency_map.append(tf.reshape(error, (dim_x, dim_y)))
 
   def compute_saliency(self, state):
     if not hasattr(self, 'saliency_map'):
-      self._build_mask()
-      self._build_saliency_op()
+      shape = state.shape[1:-1]
+      self._build_mask(shape)
+      self._build_saliency_op(shape)
 
     if isinstance(self, RainbowAgent):
       return self._sess.run(self.saliency_map, feed_dict={self.state_ph: state})
