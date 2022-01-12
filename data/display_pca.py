@@ -12,8 +12,10 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.tri as tri
 
-from sklearn import decomposition, cross_decomposition
+from sklearn import decomposition, cross_decomposition, svm
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold
 
 
 MERGING = {"Pong": [(1, 0), (4, 2), (5, 3)]}
@@ -28,6 +30,8 @@ def parse_args():
                         type=str, dest='save_file', help="Save figure instead of showing")
     parser.add_argument('-m', '--merge', type=str, action='append',
                         help="Actions to merge together")
+    parser.add_argument('-d', '--display', action='store_true',
+                        help="Display KNN/SVM in pls")
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--pls', action='store_true',
                        help="Display PLS instead of PCA")
@@ -44,7 +48,18 @@ def load_states(game, n):
     state_file = f"all_states/states_{n}/{game}.npy"
     assert os.path.exists(state_file), f"State file not found: {state_file}"
     states = np.load(state_file)
-    return states[:, :, :, 3]
+    return states[..., -1]
+
+def create_game(game_name):
+    # Procgen
+    if game_name.startswith("Procgen") and '.' in game_name:
+      env_name, infos = game_name.split('.')
+      num_levels, start_level = infos.split('-')
+      new_env_name = f"procgen:{env_name.lower()}-v0"
+      return gym.make(new_env_name, distribution_mode='easy',
+                      start_level=int(start_level), num_levels=int(num_levels))
+
+    return gym.make(f"{game_name}-v0")
 
 def onpick(state_imgs, event):
     state = state_imgs[event.ind[0]]
@@ -53,6 +68,32 @@ def onpick(state_imgs, event):
     fig.gca().imshow(state, cmap='gray')
     plt.draw()
     plt.pause(0.01)
+
+def disp_svm(ax, clf):
+    if hasattr(clf, 'coef_'):
+        w = clf.coef_[0]
+        a = -w[0] / w[1]
+        xx = np.linspace(*ax.get_xlim())
+        yy = a * xx - (clf.intercept_[0]) / w[1]
+
+        # plot the parallels to the separating hyperplane that pass through the support vectors
+        b = clf.support_vectors_[0]
+        yy_down = a * xx + (b[1] - a * b[0])
+        b = clf.support_vectors_[-1]
+        yy_up = a * xx + (b[1] - a * b[0])
+
+        # plot the line, the points, and the nearest vectors to the plane
+        # ax.plot(xx, yy, 'k-')
+        # ax.plot(xx, yy_down, 'k--')
+        # ax.plot(xx, yy_up, 'k--')
+
+        ax.scatter(clf.support_vectors_[:, 0], clf.support_vectors_[:, 1], s=80, facecolors='none')
+
+    xx2, yy2 = np.meshgrid(np.arange(*ax.get_xlim(), 10), np.arange(*ax.get_ylim(), 10))
+    Z = clf.predict(np.c_[xx2.ravel(), yy2.ravel()])
+
+    Z = Z.reshape(xx2.shape)
+    ax.contourf(xx2, yy2, Z, cmap=plt.cm.coolwarm, alpha=0.3)
 
 def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=None, blocking=True):
     features = np.load(feature_file)
@@ -103,10 +144,16 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         title += f"{var:.2f}%, "
     ax.set_title(title)
 
-    env = gym.make(f"{game_name}-v0")
-    meanings = np.array(env.unwrapped.get_action_meanings())
-    meanings = meanings[np.unique(actions)]
-    ax.legend(handles=scatter.legend_elements()[0], labels=meanings.tolist())
+    env = create_game(game_name)
+    try:
+        meanings = np.array(env.unwrapped.get_action_meanings())
+        meanings = meanings[np.unique(actions)]
+        meanings = meanings.tolist()
+    # Procgen
+    except AttributeError:
+        meanings = env.unwrapped.env.env.combos
+        meanings = list(map(lambda l: '+'.join(l) if l else 'NONE', meanings))
+    ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
             n = int(features.shape[0] ** 0.5)
@@ -125,7 +172,7 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         plt.pause(0.01)
 
 def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
-             save_file=None, merge=None, blocking=True):
+             display=False, save_file=None, merge=None, blocking=True):
     features = np.load(feature_file)
     actions = np.load(action_file).astype(np.int32)
     qvalues = np.load(qvalues_file)
@@ -150,16 +197,31 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         target = OneHotEncoder().fit_transform(actions.reshape(-1, 1)).toarray()
     components = pls.fit_transform(features, target)[0]
 
-    breakpoint()
-    explained_variance_ratio = np.var(components, axis=0) / np.var(features, axis=0).sum()
-    exp_var = [v*100 for v in explained_variance_ratio]
-    total_var = sum(explained_variance_ratio) * 100
-    print(f"Experiment {os.path.dirname(feature_file)}")
-    print(f"Explained variance: {total_var:.2f}%")
-    print(f"Component wise: ", end='')
-    for v in explained_variance_ratio:
-        print(f"{v*100:.2f}%, ", end='')
-    print('\n')
+    # explained_variance_ratio = np.var(components, axis=0) / np.var(features, axis=0).sum()
+    # exp_var = [v*100 for v in explained_variance_ratio]
+    # total_var = sum(explained_variance_ratio) * 100
+    # print(f"Experiment {os.path.dirname(feature_file)}")
+    # print(f"Explained variance: {total_var:.2f}%")
+    # print(f"Component wise: ", end='')
+    # for v in explained_variance_ratio:
+    #     print(f"{v*100:.2f}%, ", end='')
+
+    if display:
+        # clf = KNeighborsClassifier()
+        clf = svm.SVC()
+
+        kf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
+        scores = []
+        for train_id, test_id in kf.split(components, actions):
+            x_train, y_train = components[train_id], actions[train_id]
+            x_test, y_test = components[test_id], actions[test_id]
+            clf.fit(x_train, y_train)
+            score = clf.score(x_test, y_test)
+            scores.append(score * 100)
+
+        scores = np.array(scores)
+        print(f"Experiment {os.path.dirname(feature_file)}")
+        print(f"Final score: {scores.mean():.2f} ± {scores.std():.2f}\n")
 
 
     fig = plt.figure(feature_file)
@@ -167,6 +229,8 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         ax = fig.add_subplot()
         scatter = ax.scatter(components[:, 0], components[:, 1], c=actions, picker=True)
         # scatter = ax.tricontour(components[:, 0], components[:, 1], actions)
+        # if display:
+        #     disp_svm(ax, clf)
 
     elif n_components == 3:
         ax = fig.add_subplot(projection='3d')
@@ -176,10 +240,16 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         print("Can't visualize in more than 3D")
         return
 
-    env = gym.make(f"{game_name}-v0")
-    meanings = np.array(env.unwrapped.get_action_meanings())
-    meanings = meanings[np.unique(actions)]
-    ax.legend(handles=scatter.legend_elements()[0], labels=meanings.tolist())
+    env = create_game(game_name)
+    try:
+        meanings = np.array(env.unwrapped.get_action_meanings())
+        meanings = meanings[np.unique(actions)]
+        meanings = meanings.tolist()
+    # Procgen
+    except AttributeError:
+        meanings = env.unwrapped.env.env.combos
+        meanings = list(map(lambda l: '+'.join(l) if l else 'NONE', meanings))
+    ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
             n = int(features.shape[0] ** 0.5)
@@ -195,7 +265,7 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         callback = functools.partial(onpick, states)
         fig.canvas.mpl_connect('pick_event', callback)
         plt.show(block=blocking)
-        plt.pause(0.01)
+        plt.pause(0.05)
 
 def disp_var(feature_dir, index_phase, n_components=2, merge=None, diff_vars=None):
     day_feature_dir = os.path.join(feature_dir, f"day_{index_phase}")
@@ -273,17 +343,38 @@ def disp_corr(feature_files, qvalues_files, save_file=None):
     plt.show()
 
 def disp_saliencies(phase_id, day_dir, night_dir, blocking=True):
-    games = os.listdir(day_dir)
+    games = sorted(os.listdir(day_dir))
 
-    fig, axes = plt.subplots(len(games))
-    fig.suptitle(f"Phase {phase_id}")
-    for i, game in enumerate(games):
-        day_data = np.load(os.path.join(day_dir, game, 'saliency_activations.npy'))
-        night_data = np.load(os.path.join(night_dir, game, 'saliency_activations.npy'))
-        axes[i].plot(day_data, label='Day')
-        axes[i].plot(night_data, label='Night')
-        axes[i].set_title(game)
-        axes[i].legend()
+    n = 10
+    max_figs = len(games) // n + (len(games) % n != 0)
+
+    for fig_number in range(max_figs):
+        n_plots = (len(games) % n if fig_number == max_figs-1 else n)
+        if n_plots == 0:
+            n_plots = n
+
+        if n_plots % 2 == 0 and n_plots > 4:
+            plot_dim = (n_plots // 2, 2)
+        else:
+            plot_dim = (n_plots, )
+
+        fig, axes = plt.subplots(*plot_dim)
+        fig.suptitle(f"Phase {phase_id}")
+
+        if n_plots == 1:
+            axes = [axes]
+        elif n_plots % 2 == 0:
+            axes = axes.flatten()
+
+        for i in range(n_plots):
+            game = games[fig_number * n_plots + i]
+
+            day_data = np.load(os.path.join(day_dir, game, 'saliency_activations.npy'))
+            night_data = np.load(os.path.join(night_dir, game, 'saliency_activations.npy'))
+            axes[i].plot(day_data, label='Day')
+            axes[i].plot(night_data, label='Night')
+            axes[i].set_title(game)
+            axes[i].legend()
 
     plt.show(block=blocking)
 
@@ -370,7 +461,7 @@ def main():
                 else:
                     qvalues_file = feature_file.replace('features.', 'qvalues.')
                     disp_pls(feature_file, action_file, qvalues_file, args.nb_components,
-                             args.save_file, args.merge, blocking)
+                             args.display, args.save_file, args.merge, blocking)
 
             # Matplotlib figure
             elif feature_file.endswith('.pickle'):

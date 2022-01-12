@@ -58,7 +58,8 @@ class EvalRunner:
     image_path = f"{self.saliency_path}_{self.frame_nb:03}.png"
 
     self.ax.cla()
-    self.ax.imshow(self._agent.state[0, :, :, 3], cmap='gray')
+    curr_state = self._agent.state[0, ..., -1].astype(np.uint8)
+    self.ax.imshow(curr_state, cmap='gray')
     self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
     self.fig.savefig(image_path)
 

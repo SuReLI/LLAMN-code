@@ -138,16 +138,16 @@ class MainEvalRunner:
 
       features = np.zeros((NB_STATES_2, 512), np.float32)
       features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
       features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
       actions = np.zeros(NB_STATES_2, np.float32)
       actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
-                                                feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
       actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
-                                                feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
       return
 

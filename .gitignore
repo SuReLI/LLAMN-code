@@ -5,6 +5,7 @@ main
 visu
 eval
 eval_transfer
+run_all.sh
 
 etc/
 data/*

@@ -53,7 +53,7 @@ class MyExpertAgent(SaliencyAgent, ExpertAgent):
     MyRainbowAgent.reload_checkpoint(self, ckpt_path)
 
   def _build_features_op(self):
-    state_shape = (NB_STATES_2//2, *self.observation_shape, 4)
+    state_shape = (NB_STATES_2//2, *self.observation_shape, self.stack_size)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.online_convnet(self.all_states_ph)
     self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)
@@ -88,7 +88,7 @@ class MyLLAMNAgent(SaliencyAgent, AMNAgent):
     MyDQNAgent.reload_checkpoint(self, ckpt_path)
 
   def _build_features_op(self):
-    state_shape = (NB_STATES_2//2, *self.observation_shape, 4)
+    state_shape = (NB_STATES_2//2, *self.observation_shape, self.stack_size)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.convnet(self.all_states_ph)
     self.all_qvalues = []

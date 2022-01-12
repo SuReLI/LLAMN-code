@@ -49,7 +49,9 @@ def main(_):
   first_game_name = gin.query_parameter('transfer_run_experiment.MasterRunner.first_game_name')
   games_names = gin.query_parameter('transfer_run_experiment.MasterRunner.transferred_games_names')
 
-  all_games = [create_games([first_game_name]), create_games(games_names)]
+  render = (FLAGS.mode is None)
+  all_games = [create_games([first_game_name], render=render),
+               create_games(games_names, render=render)]
 
   if FLAGS.mode == 'saliency':
     FLAGS.num_eps = 1
