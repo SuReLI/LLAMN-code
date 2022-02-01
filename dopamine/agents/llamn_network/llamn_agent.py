@@ -41,6 +41,7 @@ class AMNAgent:
                observation_dtype=atari_lib.NATURE_DQN_DTYPE,
                stack_size=atari_lib.NATURE_DQN_STACK_SIZE,
                network=llamn_atari_lib.AMNNetwork,
+               expert_network=llamn_atari_lib.ExpertNetwork,
                gamma=0.99,
                update_horizon=1,
                min_replay_history=1000,
@@ -96,6 +97,7 @@ class AMNAgent:
     self.observation_dtype = observation_dtype
     self.stack_size = stack_size
     self.network = network
+    self.expert_network = expert_network
     self.gamma = gamma
     self.update_horizon = update_horizon
     self.cumulative_gamma = math.pow(gamma, update_horizon)
@@ -204,7 +206,7 @@ class AMNAgent:
     self.experts = []
     for num_actions, path in zip(self.expert_num_actions, self.expert_paths):
       expert_name = os.path.basename(path) + '/online'
-      expert = llamn_atari_lib.ExpertNetwork(
+      expert = self.expert_network(
           num_actions,
           self.expert_num_atoms,
           self.expert_support,
@@ -217,11 +219,11 @@ class AMNAgent:
 
   def _build_prev_llamn(self):
     if not self.eval_mode and self.llamn_path:
-      self.previous_llamn = llamn_atari_lib.AMNNetwork(self.llamn_num_actions,
-                                                       self.llamn_num_atoms,
-                                                       self.llamn_support,
-                                                       self.feature_size,
-                                                       name='prev_llamn')
+      self.previous_llamn = self.network(self.llamn_num_actions,
+                                         self.llamn_num_atoms,
+                                         self.llamn_support,
+                                         self.feature_size,
+                                         name='prev_llamn')
 
   def _build_replay_buffers(self):
     if self.replay_scheme not in ['uniform', 'prioritized']:
@@ -258,7 +260,6 @@ class AMNAgent:
       #              for var in self.previous_llamn.variables}
       # saver = tf.compat.v1.train.Saver(var_list=var_names)
       # saver.restore(self._sess, ckpt_path)
-
 
   def load_buffers(self):
     if not self.eval_mode and self.llamn_path:
