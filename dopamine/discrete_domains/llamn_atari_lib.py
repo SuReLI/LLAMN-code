@@ -10,11 +10,11 @@ import tensorflow as tf
 
 
 ExpertNetworkType = collections.namedtuple(
-    'expert_network', ['features', 'pre_output', 'q_values', 'logits', 'probabilities'])
+    'expert_network', ['features', 'q_values', 'logits', 'probabilities'])
 AMNNetworkType = collections.namedtuple(
-    'amn_network', ['pre_output', 'q_values', 'features'])
+    'amn_network', ['q_values', 'features'])
 AMNNetworkDistributionalType = collections.namedtuple(
-    'amn_network', ['pre_output', 'q_values', 'probabilities', 'features'])
+    'amn_network', ['q_values', 'probabilities', 'features'])
 
 
 class ExpertNetwork(tf.keras.Model):
@@ -70,21 +70,20 @@ class ExpertNetwork(tf.keras.Model):
     x = self.flatten(x)
     features = x
     x = self.dense1(x)
-    pre_output = x
 
     if self.init_option == 3 and self.llamn_network:
       raise Exception("Option not valid anymore")
-      llamn_pre_output = self.llamn_network(state).pre_output
-      llamn_pre_output = tf.stop_gradient(llamn_pre_output)
-      features = tf.concat([features, llamn_pre_output], axis=1)
-      features = self.dense_features(features)
+      # llamn_pre_output = self.llamn_network(state).pre_output
+      # llamn_pre_output = tf.stop_gradient(llamn_pre_output)
+      # features = tf.concat([features, llamn_pre_output], axis=1)
+      # features = self.dense_features(features)
 
     output = self.dense_output(x)
     logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
     q_values = tf.reduce_sum(self.support * probabilities, axis=2)
 
-    return ExpertNetworkType(features, pre_output, q_values, logits, probabilities)
+    return ExpertNetworkType(features, q_values, logits, probabilities)
 
 
 class AMNNetwork(tf.keras.Model):
@@ -138,7 +137,7 @@ class AMNNetwork(tf.keras.Model):
     if not self.num_atoms:
       q_values = self.dense_output(pre_output)
 
-      return AMNNetworkType(pre_output, q_values, features)
+      return AMNNetworkType(q_values, features)
 
     else:
       output = self.dense_output(pre_output)
@@ -146,4 +145,4 @@ class AMNNetwork(tf.keras.Model):
       probabilities = tf.keras.activations.softmax(logits)
       q_values = tf.reduce_sum(self.support * probabilities, axis=2)
 
-      return AMNNetworkDistributionalType(pre_output, q_values, probabilities, features)
+      return AMNNetworkDistributionalType(q_values, probabilities, features)

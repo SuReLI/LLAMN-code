@@ -11,6 +11,7 @@ import tensorflow as tf
 
 import gin
 import gym
+from gym.wrappers.time_limit import TimeLimit
 from dopamine.discrete_domains.atari_lib import AtariPreprocessing
 
 
@@ -20,6 +21,10 @@ gin.constant('llamn_game_lib.DUCKIE_OBSERVATION_DTYPE', tf.uint8)
 gin.constant('llamn_game_lib.PROCGEN_STACK_SIZE', 1)
 gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_SHAPE', (64, 64, 3))
 gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_DTYPE', tf.uint8)
+
+gin.constant('llamn_game_lib.PENDULUM_OBSERVATION_SHAPE', (3, 1))
+gin.constant('llamn_game_lib.PENDULUM_OBSERVATION_DTYPE', tf.float64)
+gin.constant('llamn_game_lib.PENDULUM_STACK_SIZE', 1)
 
 
 @gin.configurable
@@ -46,6 +51,9 @@ def create_game(game_name, render=False):
 
   elif game_name.startswith('Procgen'):
     return ProcGenGame(game_name, render)
+
+  elif game_name.startswith('Gym'):
+    return GymGame(game_name)
 
   else:
     return AtariGame(game_name, True)
@@ -77,6 +85,46 @@ class ModifiedAtariPreprocessing(AtariPreprocessing):
   def _pool_and_resize(self):
     image = super()._pool_and_resize()
     return self.process_variant(image)
+
+
+@gin.configurable
+class GymPreprocessing(object):
+  """A Wrapper class around Gym environments."""
+
+  def __init__(self, environment, name):
+    self.environment = environment
+    self.name = name
+    self.game_over = False
+    min_action = self.environment.action_space.low[0]
+    max_action = self.environment.action_space.high[0]
+    self.action_mapping = np.linspace(min_action, max_action, 5)[:, np.newaxis]
+
+  @property
+  def observation_space(self):
+    return self.environment.observation_space
+
+  @property
+  def action_space(self):
+    return gym.spaces.Discrete(5)
+
+  @property
+  def reward_range(self):
+    return self.environment.reward_range
+
+  @property
+  def metadata(self):
+    return self.environment.metadata
+
+  def reset(self):
+    return self.environment.reset()
+
+  def step(self, action):
+    action = self.action_mapping[action]
+    observation, reward, game_over, info = self.environment.step(action)
+    was_truncated = info.get('TimeLimit.truncated', False)
+    game_over = game_over and not was_truncated
+    self.game_over = game_over
+    return observation, reward, game_over, info
 
 
 class Game(ABC):
@@ -143,6 +191,26 @@ class ProcGenGame(Game):
                    start_level=self.start_level, num_levels=self.num_levels,
                    render=self.render)
     env.name = self.name
+    return env
+
+
+class GymGame(Game):
+
+  def __init__(self, game_name):
+    game_name = game_name[4:]
+    super().__init__(game_name)
+
+    self.env_name = f'{self.name}-v1'
+
+    env = gym.make(self.env_name)
+    env = GymPreprocessing(env, self.name)
+    self.num_actions = env.action_space.n
+
+  def create(self):
+    env = gym.make(self.env_name)
+    if isinstance(env, TimeLimit):
+      env = env.env
+    env = GymPreprocessing(env, self.name)
     return env
 
 

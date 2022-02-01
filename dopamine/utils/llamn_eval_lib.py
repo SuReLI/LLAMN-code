@@ -201,9 +201,9 @@ class MainEvalRunner:
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
       features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.pre_output,
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
                                                    feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.pre_output,
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
                                                    feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
@@ -262,9 +262,9 @@ class MainEvalRunner:
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
       features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.pre_output,
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
                                                    feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.pre_output,
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
                                                    feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
       np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
 
