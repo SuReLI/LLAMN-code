@@ -343,10 +343,7 @@ class AMNAgent:
     return loss
 
   def _build_ewc_loss(self):
-    if self.llamn_path is None:
-      return 0
-
-    pass
+    return
 
   def _build_train_ops(self):
     if self.eval_mode:

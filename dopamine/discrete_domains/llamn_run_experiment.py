@@ -121,6 +121,11 @@ class MasterRunner:
     self._write_sentinel(game.name)
 
   def run_llamn(self, base_dir, games, paths):
+    """In theory, this function is not needed (as we always run at most one LLAMN per
+    night), but tensorflow doesn't manage multiprocessing very well and if a LLAMN runs
+    on the main thread, it will have to import tensorflow and do stuff with it, which
+    will prevent future ExpertNetwork to run on their own processes.
+    """ 
     llamn = LLAMNRunner(base_dir,
                         num_actions=self.max_num_actions,
                         expert_games=games,

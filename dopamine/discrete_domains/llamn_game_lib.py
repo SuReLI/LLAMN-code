@@ -22,7 +22,6 @@ gin.constant('llamn_game_lib.PROCGEN_STACK_SIZE', 1)
 gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_SHAPE', (64, 64, 3))
 gin.constant('llamn_game_lib.PROCGEN_OBSERVATION_DTYPE', tf.uint8)
 
-gin.constant('llamn_game_lib.PENDULUM_OBSERVATION_SHAPE', (3, 1))
 gin.constant('llamn_game_lib.PENDULUM_OBSERVATION_DTYPE', tf.float64)
 gin.constant('llamn_game_lib.PENDULUM_STACK_SIZE', 1)
 
@@ -34,10 +33,18 @@ def create_games(games_names, render=False):
     # Range of levels (ProcGen)
     if ':' in game_name:
       env_name, infos = game_name.split('.')
-      num_levels, start_level = infos.split('-')
+      if '-' in infos:
+        num_levels, start_level = infos.split('-')
+      else:
+        start_level = infos
+        num_levels = None
+
       first_level, last_level = map(int, start_level.split(':'))
       for level in range(first_level, last_level):
-        new_game_name = f"{env_name}.{num_levels}-{level}"
+        if num_levels:
+          new_game_name = f"{env_name}.{num_levels}-{level}"
+        else:
+          new_game_name = f"{env_name}.{level}"
         games.append(create_game(new_game_name, render))
 
     else:
@@ -88,43 +95,76 @@ class ModifiedAtariPreprocessing(AtariPreprocessing):
 
 
 @gin.configurable
-class GymPreprocessing(object):
+class GymPreprocessing(gym.Wrapper):
   """A Wrapper class around Gym environments."""
 
-  def __init__(self, environment, name):
-    self.environment = environment
+  def __init__(self, env, name, level, n_features, n_redundant, n_repeated):
+    super().__init__(env)
+
     self.name = name
+    self.level = level
     self.game_over = False
-    min_action = self.environment.action_space.low[0]
-    max_action = self.environment.action_space.high[0]
+
+    self.n_features = n_features
+    self.n_redundant = n_redundant
+    self.n_repeated = n_repeated
+
+    min_action = self.env.action_space.low[0]
+    max_action = self.env.action_space.high[0]
     self.action_mapping = np.linspace(min_action, max_action, 5)[:, np.newaxis]
+    self.action_space = gym.spaces.Discrete(5)
 
-  @property
-  def observation_space(self):
-    return self.environment.observation_space
+    self.min_observation = self.env.observation_space.low
+    self.max_observation = self.env.observation_space.high
+    self.observation_space = gym.spaces.Box(np.zeros(self.n_features),
+                                            np.ones(self.n_features),
+                                            (self.n_features, ))
 
-  @property
-  def action_space(self):
-    return gym.spaces.Discrete(5)
-
-  @property
-  def reward_range(self):
-    return self.environment.reward_range
-
-  @property
-  def metadata(self):
-    return self.environment.metadata
-
-  def reset(self):
-    return self.environment.reset()
+  def reset(self, **kwargs):
+    observation = self.env.reset(**kwargs)
+    return self.randomize(observation)
 
   def step(self, action):
     action = self.action_mapping[action]
-    observation, reward, game_over, info = self.environment.step(action)
+    observation, reward, game_over, info = self.env.step(action)
+    observation = self.randomize(observation)
     was_truncated = info.get('TimeLimit.truncated', False)
     game_over = game_over and not was_truncated
     self.game_over = game_over
     return observation, reward, game_over, info
+
+  def randomize(self, observation):
+    generator = np.random.default_rng(self.level)
+
+    observation = 2 * ((observation + self.min_observation)
+                       / (self.max_observation - self.min_observation)) - 1
+    n_informative = observation.shape[0]
+    n_useless = self.n_features - n_informative - self.n_redundant - self.n_repeated
+
+    X = np.zeros(self.n_features)
+    X[:n_informative] = observation
+
+    # Create redundant features
+    if self.n_redundant > 0:
+        B = 2 * generator.random((n_informative, self.n_redundant)) - 1
+        X[n_informative: n_informative + self.n_redundant] = np.dot(X[:n_informative], B)
+
+    # Repeat some features
+    if self.n_repeated > 0:
+        n = n_informative + self.n_redundant
+        indices = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
+        X[n: n + self.n_repeated] = X[indices]
+
+    # Fill useless features
+    if n_useless > 0:
+        X[-n_useless:] = generator.normal(0, 1, n_useless)
+
+    # Randomly permute features
+    indices = np.arange(self.n_features)
+    generator.shuffle(indices)
+    X[:] = X[indices]
+
+    return X
 
 
 class Game(ABC):
@@ -197,20 +237,27 @@ class ProcGenGame(Game):
 class GymGame(Game):
 
   def __init__(self, game_name):
+    if '.' in game_name:
+      game_name, infos = game_name.split('.')
+      self.level = int(infos)
+    else:
+      self.level = 1
+
     game_name = game_name[4:]
     super().__init__(game_name)
+    self.name = f"{game_name}-{self.level}"
 
-    self.env_name = f'{self.name}-v1'
+    self.env_name = f'{game_name}-v1'
 
     env = gym.make(self.env_name)
-    env = GymPreprocessing(env, self.name)
+    env = GymPreprocessing(env, self.name, self.level)
     self.num_actions = env.action_space.n
 
   def create(self):
     env = gym.make(self.env_name)
     if isinstance(env, TimeLimit):
       env = env.env
-    env = GymPreprocessing(env, self.name)
+    env = GymPreprocessing(env, self.name, self.level)
     return env
 
 

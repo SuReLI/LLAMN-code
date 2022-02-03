@@ -28,27 +28,19 @@ from __future__ import print_function
 
 from dopamine.discrete_domains import llamn_atari_lib
 import gin
-import numpy as np
 import tensorflow as tf
-
-
-PENDULUM_MIN_VALS = np.array([-1., -1., -8.])
-PENDULUM_MAX_VALS = np.array([1., 1., 8.])
 
 
 @gin.configurable
 class GymExpertNetwork(tf.keras.Model):
 
-  def __init__(self, min_vals, max_vals, num_actions, num_atoms, support, feature_size,
+  def __init__(self, num_actions, num_atoms, support, feature_size,
                create_llamn, init_option, distributional_night, name):
     super().__init__(name=name)
     activation_fn = tf.keras.activations.relu
     self.num_actions = num_actions
     self.num_atoms = num_atoms
     self.support = support
-
-    self.min_vals = min_vals
-    self.max_vals = max_vals
 
     # Defining layers
     self.flatten = tf.keras.layers.Flatten()
@@ -62,10 +54,6 @@ class GymExpertNetwork(tf.keras.Model):
   def call(self, state):
     x = tf.cast(state, tf.float32)
     x = self.flatten(x)
-    if self.min_vals is not None:
-      x -= self.min_vals
-      x /= self.max_vals - self.min_vals
-      x = 2.0 * x - 1.0  # Rescale in range [-1, 1].
     x = self.dense1(x)
     features = self.dense2(x)
     x = self.last_layer(features)
@@ -76,17 +64,15 @@ class GymExpertNetwork(tf.keras.Model):
     return llamn_atari_lib.ExpertNetworkType(features, q_values, logits, probabilities)
 
 
+@gin.configurable
 class GymAMNNetwork(tf.keras.Model):
 
-  def __init__(self, min_vals, max_vals, num_actions, num_atoms, support, feature_size, name):
+  def __init__(self, num_actions, num_atoms, support, feature_size, name):
     super().__init__(name=name)
     activation_fn = tf.keras.activations.relu
     self.num_actions = num_actions
     self.num_atoms = num_atoms
     self.support = support
-
-    self.min_vals = min_vals
-    self.max_vals = max_vals
 
     # Defining layers
     self.flatten = tf.keras.layers.Flatten()
@@ -102,10 +88,6 @@ class GymAMNNetwork(tf.keras.Model):
   def call(self, state):
     x = tf.cast(state, tf.float32)
     x = self.flatten(x)
-    if self.min_vals is not None:
-      x -= self.min_vals
-      x /= self.max_vals - self.min_vals
-      x = 2.0 * x - 1.0  # Rescale in range [-1, 1].
     x = self.dense1(x)
     features = self.dense2(x)
     x = self.last_layer(features)
@@ -120,15 +102,3 @@ class GymAMNNetwork(tf.keras.Model):
       probabilities = tf.keras.activations.softmax(logits)
       q_values = tf.reduce_sum(self.support * probabilities, axis=2)
       return llamn_atari_lib.AMNNetworkDistributionalType(q_values, probabilities, features)
-
-
-@gin.configurable
-class PendulumExpertNetwork(GymExpertNetwork):
-  def __init__(self, *args, **kwargs):
-    super().__init__(PENDULUM_MIN_VALS, PENDULUM_MAX_VALS, *args, **kwargs)
-
-
-@gin.configurable
-class PendulumAMNNetwork(GymAMNNetwork):
-  def __init__(self, *args, **kwargs):
-    super().__init__(PENDULUM_MIN_VALS, PENDULUM_MAX_VALS, *args, **kwargs)

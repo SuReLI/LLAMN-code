@@ -2,20 +2,21 @@
 # chosen achieve reasonable performance.
 import dopamine.agents.llamn_network.llamn_agent
 import dopamine.discrete_domains.llamn_gym_lib
+import dopamine.discrete_domains.llamn_game_lib
 import dopamine.discrete_domains.run_experiment
 import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Games
-MasterRunner.games_names = [['Gym-Pendulum']]
+MasterRunner.games_names = [['Gym-Pendulum.1:5']]
 
 # Runner
-Runner.num_iterations = 500
+Runner.num_iterations = 70
 Runner.training_steps = 1000
 Runner.max_steps_per_episode = 500
 
-LLAMNRunner.num_iterations = 100
-LLAMNRunner.training_steps = 500
+LLAMNRunner.num_iterations = 30
+LLAMNRunner.training_steps = 1000
 LLAMNRunner.max_steps_per_episode = 500
 
 # Common Expert / LLAMN
@@ -26,12 +27,11 @@ vmax = 10.
 expert_init_option = 2
 distributional_night = True
 
-observation_shape = %llamn_game_lib.PENDULUM_OBSERVATION_SHAPE
-observation_dtype = %llamn_game_lib.PENDULUM_OBSERVATION_DTYPE
-stack_size = %llamn_game_lib.PENDULUM_STACK_SIZE
-
-
 # Important
+n_features = 20
+GymPreprocessing.n_features = %n_features
+GymPreprocessing.n_redundant = 10
+GymPreprocessing.n_repeated = 3
 AMNAgent.replay_scheme = 'prioritized'   # Night PER
 AMNAgent.llamn_init_copy = True          # Copy weights of AMN between nights
 AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
@@ -40,13 +40,18 @@ LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on
                                          # Negative value means alternate episodes
 
 
+observation_shape = (%n_features, )
+observation_dtype = %llamn_game_lib.PENDULUM_OBSERVATION_DTYPE
+stack_size = %llamn_game_lib.PENDULUM_STACK_SIZE
+
+
 # Expert
 ExpertAgent.observation_shape = %observation_shape
 ExpertAgent.observation_dtype = %observation_dtype
 ExpertAgent.stack_size = %stack_size
 ExpertAgent.init_option = %expert_init_option
 ExpertAgent.feature_size = %feature_size
-ExpertAgent.network = @llamn_gym_lib.PendulumExpertNetwork
+ExpertAgent.network = @llamn_gym_lib.GymExpertNetwork
 ExpertAgent.num_atoms = %num_atoms
 ExpertAgent.vmax = %vmax
 ExpertAgent.gamma = 0.99
@@ -67,8 +72,8 @@ AMNAgent.observation_shape = %observation_shape
 AMNAgent.observation_dtype = %observation_dtype
 AMNAgent.stack_size = %stack_size
 AMNAgent.feature_size = %feature_size
-AMNAgent.network = @llamn_gym_lib.PendulumAMNNetwork
-AMNAgent.expert_network = @llamn_gym_lib.PendulumExpertNetwork
+AMNAgent.network = @llamn_gym_lib.GymAMNNetwork
+AMNAgent.expert_network = @llamn_gym_lib.GymExpertNetwork
 AMNAgent.distributional_night = %distributional_night
 AMNAgent.expert_init_option = %expert_init_option
 AMNAgent.expert_num_atoms = %num_atoms
