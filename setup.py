@@ -41,6 +41,7 @@ install_requires = [
     'pygame >= 1.9.2',
     'pandas >= 0.24.2',
     'tf_slim >= 1.0',
+    'tensorflow-probability >= 0.13.0',
 ]
 
 dopamine_description = (
@@ -48,7 +49,7 @@ dopamine_description = (
 
 setup(
     name='dopamine_rl',
-    version='3.2.1',
+    version='4.0.2',
     description=dopamine_description,
     long_description=long_description,
     long_description_content_type='text/markdown',

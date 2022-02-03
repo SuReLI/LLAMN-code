@@ -37,7 +37,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import copy
 import functools
 
 from dopamine.jax import losses
@@ -84,7 +83,8 @@ def train(network_def, online_params, target_params, optimizer, optimizer_state,
 
   # Get the unweighted loss without taking its mean for updating priorities.
   (mean_loss, loss), grad = grad_fn(online_params, target, loss_weights)
-  updates, optimizer_state = optimizer.update(grad, optimizer_state)
+  updates, optimizer_state = optimizer.update(grad, optimizer_state,
+                                              params=online_params)
   online_params = optax.apply_updates(online_params, updates)
   return optimizer_state, online_params, loss, mean_loss
 
@@ -280,7 +280,7 @@ class JaxRainbowAgent(dqn_agent.JaxDQNAgent):
                                                support=self._support)
     self.optimizer = dqn_agent.create_optimizer(self._optimizer_name)
     self.optimizer_state = self.optimizer.init(self.online_params)
-    self.target_network_params = copy.deepcopy(self.online_params)
+    self.target_network_params = self.online_params
 
   def _build_replay_buffer(self):
     """Creates the replay buffer used by the agent."""
@@ -352,7 +352,7 @@ class JaxRainbowAgent(dqn_agent.JaxDQNAgent):
 
     self._rng, self.action = select_action(self.network_def,
                                            self.online_params,
-                                           self.state,
+                                           self.preprocess_fn(self.state),
                                            self._rng,
                                            self.num_actions,
                                            self.eval_mode,
@@ -398,9 +398,9 @@ class JaxRainbowAgent(dqn_agent.JaxDQNAgent):
             self.target_network_params,
             self.optimizer,
             self.optimizer_state,
-            self.replay_elements['state'],
+            self.preprocess_fn(self.replay_elements['state']),
             self.replay_elements['action'],
-            self.replay_elements['next_state'],
+            self.preprocess_fn(self.replay_elements['next_state']),
             self.replay_elements['reward'],
             self.replay_elements['terminal'],
             loss_weights,

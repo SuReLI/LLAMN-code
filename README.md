@@ -41,8 +41,11 @@ This is not an official Google product.
 ## Getting Started
 
 
-There are several options for getting started with Dopamine, depending on your
-use case.
+We provide docker containers for using Dopamine.
+Instructions can be found [here](https://google.github.io/dopamine/docker/).
+
+Alternatively, Dopamine can be installed from source (preferred) or installed
+with pip. For either of these methods, continue reading at prerequisites.
 
 ### Prerequisites
 
@@ -53,6 +56,9 @@ environments you intend to use before you install Dopamine:
 
 1. Install the atari roms following the instructions from
 [atari-py](https://github.com/openai/atari-py#roms).
+2. `pip install ale-py` (we recommend using a [virtual environment](virtualenv)):
+3. `unzip $ROM_DIR/ROMS.zip -d $ROM_DIR && ale-import-roms $ROM_DIR/ROMS`
+(replace $ROM_DIR with the directory you extracted the ROMs to).
 
 **Mujoco**
 

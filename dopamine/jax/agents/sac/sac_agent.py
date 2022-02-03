@@ -30,6 +30,12 @@ from absl import logging
 from dopamine.jax import continuous_networks
 from dopamine.jax import losses
 from dopamine.jax.agents.dqn import dqn_agent
+# pylint: disable=unused-import
+# This enables (experimental) networks for SAC from pixels.
+# Note, that the full name import is required to avoid a naming
+# collision with the short name import (continuous_networks) above.
+import dopamine.labs.sac_from_pixels.continuous_networks
+# pylint: enable=unused-import
 from dopamine.replay_memory import circular_replay_buffer
 import flax
 from flax import linen as nn
@@ -40,6 +46,17 @@ import numpy as onp
 import optax
 import tensorflow as tf
 
+
+try:
+  logging.warning(
+      ('Setting tf to CPU only, to avoid OOM. '
+       'See https://jax.readthedocs.io/en/latest/gpu_memory_allocation.html '
+       'for more information.'))
+  tf.config.set_visible_devices([], 'GPU')
+except tf.errors.NotFoundError:
+  logging.info(
+      ('Unable to modify visible devices. '
+       'If you don\'t have a GPU, this is expected.'))
 
 
 gin.constant('sac_agent.IMAGE_DTYPE', onp.uint8)
@@ -185,10 +202,11 @@ def train(network_def: nn.Module,
   network_gradient, alpha_gradient = gradients
 
   # Apply gradients to all the optimizers.
-  updates, optimizer_state = optim.update(network_gradient, optimizer_state)
+  updates, optimizer_state = optim.update(network_gradient, optimizer_state,
+                                          params=network_params)
   network_params = optax.apply_updates(network_params, updates)
   alpha_updates, alpha_optimizer_state = alpha_optim.update(
-      alpha_gradient, alpha_optimizer_state)
+      alpha_gradient, alpha_optimizer_state, params=log_alpha)
   log_alpha = optax.apply_updates(log_alpha, alpha_updates)
 
   # Compile everything in a dict.
