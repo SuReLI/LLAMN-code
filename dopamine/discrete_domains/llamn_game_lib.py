@@ -105,9 +105,11 @@ class GymPreprocessing(gym.Wrapper):
     self.level = level
     self.game_over = False
 
+    self.n_informative = self.observation_space.shape[0]
     self.n_features = n_features
     self.n_redundant = n_redundant
     self.n_repeated = n_repeated
+    self.n_useless = n_features - self.n_informative - n_redundant - n_repeated
 
     min_action = self.env.action_space.low[0]
     max_action = self.env.action_space.high[0]
@@ -116,9 +118,17 @@ class GymPreprocessing(gym.Wrapper):
 
     self.min_observation = self.env.observation_space.low
     self.max_observation = self.env.observation_space.high
-    self.observation_space = gym.spaces.Box(np.zeros(self.n_features),
+    self.observation_space = gym.spaces.Box(-np.ones(self.n_features),
                                             np.ones(self.n_features),
                                             (self.n_features, ))
+
+    generator = np.random.default_rng(self.level)
+    self.redundant_comatrix = 2 * generator.random((self.n_informative, self.n_redundant)) - 1
+    n = self.n_informative + self.n_redundant
+    self.indices_copy = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
+    self.indices_permut = np.arange(self.n_features)
+    generator.shuffle(self.indices_permut[1:])
+    self.invert_indices_permut = np.argsort(self.indices_permut)
 
   def reset(self, **kwargs):
     observation = self.env.reset(**kwargs)
@@ -134,35 +144,26 @@ class GymPreprocessing(gym.Wrapper):
     return observation, reward, game_over, info
 
   def randomize(self, observation):
-    generator = np.random.default_rng(self.level)
-
-    observation = 2 * ((observation + self.min_observation)
-                       / (self.max_observation - self.min_observation)) - 1
-    n_informative = observation.shape[0]
-    n_useless = self.n_features - n_informative - self.n_redundant - self.n_repeated
+    observation = (observation - self.min_observation) / (self.max_observation - self.min_observation)
+    observation = 2 * observation - 1
 
     X = np.zeros(self.n_features)
-    X[:n_informative] = observation
+    X[:self.n_informative] = observation
 
-    # Create redundant features
     if self.n_redundant > 0:
-        B = 2 * generator.random((n_informative, self.n_redundant)) - 1
-        X[n_informative: n_informative + self.n_redundant] = np.dot(X[:n_informative], B)
+        X[self.n_informative: self.n_informative + self.n_redundant] = \
+            np.dot(X[:self.n_informative], self.redundant_comatrix)
 
-    # Repeat some features
     if self.n_repeated > 0:
-        n = n_informative + self.n_redundant
-        indices = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
-        X[n: n + self.n_repeated] = X[indices]
+        n = self.n_informative + self.n_redundant
+        X[n: n + self.n_repeated] = X[self.indices_copy]
 
-    # Fill useless features
-    if n_useless > 0:
-        X[-n_useless:] = generator.normal(0, 1, n_useless)
+    if self.n_useless > 0:
+        X[-self.n_useless:] = np.random.normal(0, 1, self.n_useless)
 
-    # Randomly permute features
-    indices = np.arange(self.n_features)
-    generator.shuffle(indices)
-    X[:] = X[indices]
+    X = np.roll(X, 1)
+    X[0] = self.level
+    X[:] = X[self.indices_permut]
 
     return X
 

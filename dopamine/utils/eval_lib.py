@@ -58,9 +58,20 @@ class EvalRunner:
     image_path = f"{self.saliency_path}_{self.frame_nb:03}.png"
 
     self.ax.cla()
-    curr_state = self._agent.state[0, ..., -1].astype(np.uint8)
-    self.ax.imshow(curr_state, cmap='gray')
-    self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
+
+    # Images
+    if len(saliency_map.shape) > 1:
+      curr_state = self._agent.state[0, ..., -1].astype(np.uint8)
+      self.ax.imshow(curr_state, cmap='gray')
+      self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
+
+    else:
+      curr_state = self._agent.state[0, ..., -1][self._environment.invert_indices_permut]
+      saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
+      saliency_map = 2 * saliency_map - 1
+      img = np.vstack((curr_state, saliency_map))
+      self.ax.imshow(img, cmap='gray')
+
     self.fig.savefig(image_path)
 
     activation_file = f"{self.saliency_path}_activations"
@@ -154,11 +165,26 @@ class SaliencyAgent:
         error = tf.norm(perturbed_softmax - output_softmax, ord=1, axis=1)
         self.saliency_map.append(tf.reshape(error, (dim_x, dim_y)))
 
+  def _build_gradient_op(self):
+    if isinstance(self, RainbowAgent):
+      grad = tf.compat.v1.gradients(self._net_outputs.q_values, self.state_ph)
+      self.saliency_map = grad[0][0, ..., -1]
+
+    elif isinstance(self, AMNAgent):
+      self.saliency_map = []
+      for i in range(self.nb_experts):
+        grad = tf.compat.v1.gradients(self._net_q_output[i], self.state_ph)
+        self.saliency_map.append(grad[0][0, ..., -1])
+
   def compute_saliency(self, state):
     if not hasattr(self, 'saliency_map'):
       shape = state.shape[1:-1]
-      self._build_mask(shape)
-      self._build_saliency_op(shape)
+      # Images
+      if len(shape) > 1:
+        self._build_mask(shape)
+        self._build_saliency_op(shape)
+      else:
+        self._build_gradient_op()
 
     if isinstance(self, RainbowAgent):
       return self._sess.run(self.saliency_map, feed_dict={self.state_ph: state})
