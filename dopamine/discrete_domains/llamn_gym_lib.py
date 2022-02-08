@@ -90,7 +90,6 @@ class GymAMNNetwork(tf.keras.Model):
     x = self.flatten(x)
     x = self.dense1(x)
     features = self.dense2(x)
-    x = self.last_layer(features)
 
     if not self.num_atoms:
       q_values = self.last_layer(features)

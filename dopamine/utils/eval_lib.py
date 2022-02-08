@@ -66,11 +66,15 @@ class EvalRunner:
       self.ax.imshow(saliency_map, cmap='Reds', alpha=0.5)
 
     else:
-      curr_state = self._agent.state[0, ..., -1][self._environment.invert_indices_permut]
+      curr_state = self._agent.state[0, ..., -1]
       saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
       saliency_map = 2 * saliency_map - 1
       img = np.vstack((curr_state, saliency_map))
-      self.ax.imshow(img, cmap='gray')
+      self.ax.imshow(img, cmap='bwr')
+      vlines = [self._environment.n_informative, self._environment.n_redundant, self._environment.n_repeated]
+      vlines = np.cumsum(vlines) - 0.5
+      self.ax.vlines(vlines, -0.5, 1.5, colors='black')
+      self.ax.set_axis_off()
 
     self.fig.savefig(image_path)
 
@@ -167,13 +171,13 @@ class SaliencyAgent:
 
   def _build_gradient_op(self):
     if isinstance(self, RainbowAgent):
-      grad = tf.compat.v1.gradients(self._net_outputs.q_values, self.state_ph)
+      grad = tf.abs(tf.compat.v1.gradients(self._net_outputs.q_values, self.state_ph))
       self.saliency_map = grad[0][0, ..., -1]
 
     elif isinstance(self, AMNAgent):
       self.saliency_map = []
       for i in range(self.nb_experts):
-        grad = tf.compat.v1.gradients(self._net_q_output[i], self.state_ph)
+        grad = tf.abs(tf.compat.v1.gradients(self._net_q_output[i], self.state_ph))
         self.saliency_map.append(grad[0][0, ..., -1])
 
   def compute_saliency(self, state):

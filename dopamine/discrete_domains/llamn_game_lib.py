@@ -113,8 +113,8 @@ class GymPreprocessing(gym.Wrapper):
 
     min_action = self.env.action_space.low[0]
     max_action = self.env.action_space.high[0]
-    self.action_mapping = np.linspace(min_action, max_action, 5)[:, np.newaxis]
-    self.action_space = gym.spaces.Discrete(5)
+    self.action_mapping = np.linspace(min_action, max_action, 3)[:, np.newaxis]
+    self.action_space = gym.spaces.Discrete(3)
 
     self.min_observation = self.env.observation_space.low
     self.max_observation = self.env.observation_space.high
@@ -126,9 +126,6 @@ class GymPreprocessing(gym.Wrapper):
     self.redundant_comatrix = 2 * generator.random((self.n_informative, self.n_redundant)) - 1
     n = self.n_informative + self.n_redundant
     self.indices_copy = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
-    self.indices_permut = np.arange(self.n_features)
-    generator.shuffle(self.indices_permut[1:])
-    self.invert_indices_permut = np.argsort(self.indices_permut)
 
   def reset(self, **kwargs):
     observation = self.env.reset(**kwargs)
@@ -160,10 +157,6 @@ class GymPreprocessing(gym.Wrapper):
 
     if self.n_useless > 0:
         X[-self.n_useless:] = np.random.normal(0, 1, self.n_useless)
-
-    X = np.roll(X, 1)
-    X[0] = self.level
-    X[:] = X[self.indices_permut]
 
     return X
 
