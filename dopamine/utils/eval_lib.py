@@ -68,9 +68,8 @@ class EvalRunner:
     else:
       curr_state = self._agent.state[0, ..., -1]
       saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
-      saliency_map = 2 * saliency_map - 1
       img = np.vstack((curr_state, saliency_map))
-      self.ax.imshow(img, cmap='bwr')
+      self.ax.imshow(img, cmap='bwr', vmin=-1, vmax=1)
       vlines = [self._environment.n_informative, self._environment.n_redundant, self._environment.n_repeated]
       vlines = np.cumsum(vlines) - 0.5
       self.ax.vlines(vlines, -0.5, 1.5, colors='black')

@@ -345,36 +345,48 @@ def disp_corr(feature_files, qvalues_files, save_file=None):
 def disp_saliencies(phase_id, day_dir, night_dir, blocking=True):
     games = sorted(os.listdir(day_dir))
 
-    n = 10
-    max_figs = len(games) // n + (len(games) % n != 0)
+    AXES_PER_FIGS = 10
+    max_figs = len(games) // AXES_PER_FIGS + (len(games) % AXES_PER_FIGS != 0)
 
     for fig_number in range(max_figs):
-        n_plots = (len(games) % n if fig_number == max_figs-1 else n)
+        n_plots = (len(games) % AXES_PER_FIGS if fig_number == max_figs-1 else AXES_PER_FIGS)
         if n_plots == 0:
-            n_plots = n
+            n_plots = AXES_PER_FIGS
 
         if n_plots % 2 == 0 and n_plots > 4:
             plot_dim = (n_plots // 2, 2)
         else:
             plot_dim = (n_plots, )
 
-        fig, axes = plt.subplots(*plot_dim)
-        fig.suptitle(f"Phase {phase_id}")
+        fig1, axes_sum = plt.subplots(*plot_dim)
+        fig2, axes_mean = plt.subplots(*plot_dim)
+
+        fig1.suptitle(f"Phase {phase_id}")
+        fig2.suptitle(f"Phase {phase_id}")
 
         if n_plots == 1:
-            axes = [axes]
+            axes_sum = [axes_sum]
+            axes_mean = [axes_mean]
         elif n_plots % 2 == 0:
-            axes = axes.flatten()
+            axes_sum = axes_sum.flatten()
+            axes_mean = axes_mean.flatten()
 
         for i in range(n_plots):
             game = games[fig_number * n_plots + i]
 
-            day_data = np.load(os.path.join(day_dir, game, 'saliency_activations.npy'))
-            night_data = np.load(os.path.join(night_dir, game, 'saliency_activations.npy'))
-            axes[i].plot(day_data, label='Day')
-            axes[i].plot(night_data, label='Night')
-            axes[i].set_title(game)
-            axes[i].legend()
+            day_sum_data = np.load(os.path.join(day_dir, game, 'sum_saliency_activations.npy'))
+            night_sum_data = np.load(os.path.join(night_dir, game, 'sum_saliency_activations.npy'))
+            axes_sum[i].plot(day_sum_data, label='Day')
+            axes_sum[i].plot(night_sum_data, label='Night')
+            axes_sum[i].set_title(game)
+            axes_sum[i].legend()
+
+            day_mean_data = np.load(os.path.join(day_dir, game, 'mean_saliency_activations.npy'))
+            night_mean_data = np.load(os.path.join(night_dir, game, 'mean_saliency_activations.npy'))
+            combined_data = np.vstack((day_mean_data, night_mean_data))
+            axes_mean[i].imshow(combined_data, cmap='Reds')
+            axes_mean[i].set_title(game)
+            axes_mean[i].set_axis_off()
 
     plt.show(block=blocking)
 

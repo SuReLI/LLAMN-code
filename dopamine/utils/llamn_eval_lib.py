@@ -227,13 +227,18 @@ class MainEvalRunner:
       result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_dir = os.path.join(result_dir, 'saliency_activations.npy')
+      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
+      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
 
       saliency_sums = np.empty(100)
-      for i, state in enumerate(all_states[:100, :, :, :]):
+      saliency_means = np.empty((100, *all_states.shape[1:-1]))
+      for i, state in enumerate(all_states[:100, ...]):
         saliency = runner._agent.compute_saliency(state[np.newaxis])
         saliency_sums[i] = saliency.sum()
-      np.save(saliency_dir, saliency_sums)
+        saliency_means[i] = saliency
+      saliency_means = saliency_means.mean(axis=0)
+      np.save(saliency_sum_file, saliency_sums)
+      np.save(saliency_mean_file, saliency_means)
       return
 
     elif mode == 'saliency_ep':
@@ -290,13 +295,18 @@ class MainEvalRunner:
       result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
       os.makedirs(result_dir, exist_ok=True)
       all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_dir = os.path.join(result_dir, 'saliency_activations.npy')
+      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
+      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
 
       saliency_sums = np.empty(100)
-      for i, state in enumerate(all_states[:100, :, :, :]):
+      saliency_means = np.empty((100, *all_states.shape[1:-1]))
+      for i, state in enumerate(all_states[:100, ...]):
         saliency = runner._agent.compute_saliency(state[np.newaxis])
         saliency_sums[i] = saliency.sum()
-      np.save(saliency_dir, saliency_sums)
+        saliency_means[i] = saliency
+      saliency_means = saliency_means.mean(axis=0)
+      np.save(saliency_sum_file, saliency_sums)
+      np.save(saliency_mean_file, saliency_means)
       return
 
     elif mode == 'saliency_ep':
