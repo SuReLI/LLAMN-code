@@ -58,7 +58,7 @@ The hyperparameters are defined in the gin config files `dopamine/agents/llamn_n
 
 | Breakout | Pong | Space Invaders | Video Pinball |
 | :------: | :--: | :------------: | :-----------: |
-| ![](figs/PassiveToActive/Breakout.png) | ![](figs/PassiveToActive/Pong.png) | ![](figs/PassiveToActive/SpaceInvaders.png) | ![](figs/PassiveToActive/VideoPinball.png) |
+| ![](figs/FeatureConcat/Breakout.png) | ![](figs/FeatureConcat/Pong.png) | ![](figs/FeatureConcat/SpaceInvaders.png) | ![](figs/FeatureConcat/VideoPinball.png) |
 
 
 ## Transfer to New Unseen Games
