@@ -194,3 +194,17 @@ class SaliencyAgent:
 
     elif isinstance(self, AMNAgent):
       return self._sess.run(self.saliency_map[self.ind_expert], feed_dict={self.state_ph: state})
+
+  def compute_saliencies(self, state):
+    if not hasattr(self, 'saliency_map'):
+      self.grad_state_ph = tf.compat.v1.placeholder(self.observation_dtype, state.shape)
+
+      if isinstance(self, RainbowAgent):
+        q_values = self.online_convnet(self.grad_state_ph)
+      elif isinstance(self, AMNAgent):
+        q_values = self.convnet(self.grad_state_ph)
+
+      grad = tf.abs(tf.compat.v1.gradients(q_values, self.grad_state_ph))
+      self.saliency_map = grad[0][..., -1]
+
+    return self._sess.run(self.saliency_map, feed_dict={self.grad_state_ph: state})

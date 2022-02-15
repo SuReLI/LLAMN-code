@@ -35,8 +35,10 @@ def parse_args():
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--pls', action='store_true',
                        help="Display PLS instead of PCA")
-    group.add_argument('-s', '--saliency', action='store_true',
+    group.add_argument('-p', '--saliency-sum', action='store_true',
                        help="Compute sum of saliency activations")
+    group.add_argument('-s', '--saliency-mean', action='store_true',
+                       help="Compute mean of saliency activations")
     group.add_argument('-v', '--variance', action='store_true',
                         help="Compare only variance")
     group.add_argument('-c', '--correlation', action='store_true',
@@ -60,6 +62,21 @@ def create_game(game_name):
                       start_level=int(start_level), num_levels=int(num_levels))
 
     return gym.make(f"{game_name}-v0")
+
+def get_meaning(game_name):
+    try:
+        env = create_game(game_name)
+        meanings = np.array(env.unwrapped.get_action_meanings())
+        meanings = meanings[np.unique(actions)]
+        meanings = meanings.tolist()
+    # Procgen
+    except AttributeError:
+        meanings = env.unwrapped.env.env.combos
+        meanings = list(map(lambda l: '+'.join(l) if l else 'NONE', meanings))
+    # Pendulum
+    except gym.error.UnregisteredEnv:
+        meanings = ["-2", "0", "2"]
+    return meanings
 
 def onpick(state_imgs, event):
     state = state_imgs[event.ind[0]]
@@ -144,15 +161,7 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         title += f"{var:.2f}%, "
     ax.set_title(title)
 
-    env = create_game(game_name)
-    try:
-        meanings = np.array(env.unwrapped.get_action_meanings())
-        meanings = meanings[np.unique(actions)]
-        meanings = meanings.tolist()
-    # Procgen
-    except AttributeError:
-        meanings = env.unwrapped.env.env.combos
-        meanings = list(map(lambda l: '+'.join(l) if l else 'NONE', meanings))
+    meanings = get_meaning(game_name)
     ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
@@ -240,15 +249,7 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         print("Can't visualize in more than 3D")
         return
 
-    env = create_game(game_name)
-    try:
-        meanings = np.array(env.unwrapped.get_action_meanings())
-        meanings = meanings[np.unique(actions)]
-        meanings = meanings.tolist()
-    # Procgen
-    except AttributeError:
-        meanings = env.unwrapped.env.env.combos
-        meanings = list(map(lambda l: '+'.join(l) if l else 'NONE', meanings))
+    meanings = get_meaning(game_name)
     ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
@@ -342,11 +343,12 @@ def disp_corr(feature_files, qvalues_files, save_file=None):
     ax.yaxis.set_ticklabels(game_names, rotation=90)
     plt.show()
 
-def disp_saliencies(phase_id, day_dir, night_dir, blocking=True):
+def disp_saliencies(phase_id, day_dir, night_dir, disp_mean, blocking=True):
     games = sorted(os.listdir(day_dir))
 
     AXES_PER_FIGS = 10
     max_figs = len(games) // AXES_PER_FIGS + (len(games) % AXES_PER_FIGS != 0)
+    file_name = ('mean' if disp_mean else 'sum') + '_saliency_activations.npy'
 
     for fig_number in range(max_figs):
         n_plots = (len(games) % AXES_PER_FIGS if fig_number == max_figs-1 else AXES_PER_FIGS)
@@ -358,35 +360,43 @@ def disp_saliencies(phase_id, day_dir, night_dir, blocking=True):
         else:
             plot_dim = (n_plots, )
 
-        fig1, axes_sum = plt.subplots(*plot_dim)
-        fig2, axes_mean = plt.subplots(*plot_dim)
-
-        fig1.suptitle(f"Phase {phase_id}")
-        fig2.suptitle(f"Phase {phase_id}")
+        fig, axes = plt.subplots(*plot_dim)
+        fig.suptitle(f"Phase {phase_id}")
 
         if n_plots == 1:
-            axes_sum = [axes_sum]
-            axes_mean = [axes_mean]
+            axes = [axes]
         elif n_plots % 2 == 0:
-            axes_sum = axes_sum.flatten()
-            axes_mean = axes_mean.flatten()
+            axes = axes.flatten()
 
         for i in range(n_plots):
             game = games[fig_number * n_plots + i]
 
-            day_sum_data = np.load(os.path.join(day_dir, game, 'sum_saliency_activations.npy'))
-            night_sum_data = np.load(os.path.join(night_dir, game, 'sum_saliency_activations.npy'))
-            axes_sum[i].plot(day_sum_data, label='Day')
-            axes_sum[i].plot(night_sum_data, label='Night')
-            axes_sum[i].set_title(game)
-            axes_sum[i].legend()
+            day_data = np.load(os.path.join(day_dir, game, file_name))
+            night_data = np.load(os.path.join(night_dir, game, file_name))
 
-            day_mean_data = np.load(os.path.join(day_dir, game, 'mean_saliency_activations.npy'))
-            night_mean_data = np.load(os.path.join(night_dir, game, 'mean_saliency_activations.npy'))
-            combined_data = np.vstack((day_mean_data, night_mean_data))
-            axes_mean[i].imshow(combined_data, cmap='Reds')
-            axes_mean[i].set_title(game)
-            axes_mean[i].set_axis_off()
+            if disp_mean:
+                # combined_data = np.vstack((day_data, night_data))
+                # axes[i].imshow(combined_data, cmap='Reds')
+
+                day_mask = np.vstack((np.zeros_like(day_data), np.ones_like(day_data)))
+                night_mask = np.vstack((np.ones_like(night_data), np.zeros_like(night_data)))
+
+                day_data = np.vstack((day_data, np.zeros_like(day_data)))
+                day_data = np.ma.masked_array(day_data, day_mask)
+
+                night_data = np.vstack((np.zeros_like(night_data), night_data))
+                night_data = np.ma.masked_array(night_data, night_mask)
+
+                axes[i].imshow(day_data, cmap='Reds')
+                axes[i].imshow(night_data, cmap='Reds')
+                axes[i].set_axis_off()
+
+            else:
+                axes[i].plot(day_data, label='Day')
+                axes[i].plot(night_data, label='Night')
+                axes[i].legend()
+
+            axes[i].set_title(game)
 
     plt.show(block=blocking)
 
@@ -439,7 +449,7 @@ def main():
 
         disp_corr(feature_files, qvalues_files, args.save_file)
 
-    elif args.saliency:
+    elif args.saliency_sum or args.saliency_mean:
         expe_dirs = []
         for expe_dir in args.files:
             nb_phases = len(os.listdir(expe_dir)) // 2
@@ -449,7 +459,7 @@ def main():
                 day_dir = os.path.join(expe_dir, f'day_{phase_id}')
                 night_dir = os.path.join(expe_dir, f'night_{phase_id}')
 
-                disp_saliencies(phase_id, day_dir, night_dir, blocking)
+                disp_saliencies(phase_id, day_dir, night_dir, args.saliency_mean, blocking)
 
     else:
         for feature_file in args.files:

@@ -320,8 +320,8 @@ class AMNAgent:
         self._expert_features.append(tf.stop_gradient(expert_output.features))
 
         # if self.llamn_path:
-          # llamn_output = self.previous_llamn(replay_state)
-          # self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
+        #   llamn_output = self.previous_llamn(replay_state)
+        #   self._previous_llamn_output.append(tf.stop_gradient(llamn_output.features))
 
   def _build_xent_loss(self, i_task):
     expert_q_distrib = self._expert_q_distrib[i_task]

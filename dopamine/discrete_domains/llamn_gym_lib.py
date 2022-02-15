@@ -44,7 +44,7 @@ class GymExpertNetwork(tf.keras.Model):
 
     # Defining layers
     self.flatten = tf.keras.layers.Flatten()
-    self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn,
+    self.dense1 = tf.keras.layers.Dense(feature_size, activation=activation_fn,
                                         name='dense_1')
     self.dense2 = tf.keras.layers.Dense(feature_size, activation=activation_fn,
                                         name='dense_2')
@@ -76,7 +76,7 @@ class GymAMNNetwork(tf.keras.Model):
 
     # Defining layers
     self.flatten = tf.keras.layers.Flatten()
-    self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn, name='dense_1')
+    self.dense1 = tf.keras.layers.Dense(feature_size, activation=activation_fn, name='dense_1')
     self.dense2 = tf.keras.layers.Dense(feature_size, activation=activation_fn, name='dense_2')
 
     # Not distributional

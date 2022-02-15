@@ -56,7 +56,8 @@ class MyExpertAgent(SaliencyAgent, ExpertAgent):
     state_shape = (NB_STATES_2//2, *self.observation_shape, self.stack_size)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.online_convnet(self.all_states_ph)
-    self.all_q_argmax = tf.argmax(self.all_outputs.q_values, axis=1)
+    self.all_q_values = self.all_outputs.q_values
+    self.all_q_argmax = tf.argmax(self.all_q_values, axis=1)
 
 
 class MyLLAMNAgent(SaliencyAgent, AMNAgent):
@@ -91,17 +92,25 @@ class MyLLAMNAgent(SaliencyAgent, AMNAgent):
     state_shape = (NB_STATES_2//2, *self.observation_shape, self.stack_size)
     self.all_states_ph = tf.compat.v1.placeholder(self.observation_dtype, state_shape)
     self.all_outputs = self.convnet(self.all_states_ph)
-    self.all_qvalues = []
-    self.all_q_argmax = []
+    self.all_q_values_list = []
+    self.all_q_argmax_list = []
 
     for i in range(self.nb_experts):
       expert_mask = [n_action < self.expert_num_actions[i]
                      for n_action in range(self.llamn_num_actions)]
 
       partial_q_values = tf.boolean_mask(self.all_outputs.q_values, expert_mask, axis=1)
-      self.all_qvalues.append(partial_q_values)
+      self.all_q_values_list.append(partial_q_values)
       q_argmax = tf.argmax(partial_q_values, axis=1)
-      self.all_q_argmax.append(q_argmax)
+      self.all_q_argmax_list.append(q_argmax)
+
+  @property
+  def all_q_argmax(self):
+    return self.all_q_argmax_list[self.ind_expert]
+
+  @property
+  def all_q_values(self):
+    return self.all_q_values_list[self.ind_expert]
 
 
 class MyExpertRunner(EvalRunner, ExpertRunner):
@@ -169,6 +178,65 @@ class MainEvalRunner:
     self.delay = delay
     self.root_dir = root_dir
 
+  def save_features(self, phase_dir, runner, game):
+    print('  \033[34m', game.name, '\033[0m', sep='')
+    result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
+    os.makedirs(result_dir, exist_ok=True)
+    runner._agent._build_features_op()
+    all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
+
+    features = np.zeros((NB_STATES_2, 64), np.float32)
+    features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                                 feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+    features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                                 feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+    np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
+
+    actions = np.zeros(NB_STATES_2, np.float32)
+    actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
+                                                feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+    actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
+                                                feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+    np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
+
+    q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
+    q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_values,
+                                                 feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+    q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_values,
+                                                 feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+    np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
+
+  def save_saliency(self, phase_dir, runner, game):
+      print('  \033[34m', game.name, '\033[0m', sep='')
+      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
+      os.makedirs(result_dir, exist_ok=True)
+      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
+      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
+      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
+
+      if game.name.startswith("Pendulum"):
+        saliencies = runner._agent.compute_saliencies(all_states[..., np.newaxis])
+        saliency_sums = saliencies.sum(axis=1)
+        saliency_means = saliencies.mean(axis=0)
+
+      else:
+        size = 1000
+        saliency_sums = np.empty(size)
+        saliency_means = np.empty((size, *all_states.shape[1:-1]))
+        for i, state in enumerate(all_states[:size, ...]):
+          saliency = runner._agent.compute_saliency(state[np.newaxis])
+          saliency_sums[i] = saliency.sum()
+          saliency_means[i] = saliency
+        saliency_means = saliency_means.mean(axis=0)
+
+      np.save(saliency_sum_file, saliency_sums)
+      np.save(saliency_mean_file, saliency_means)
+
+  def save_saliency_ep(self, phase, runner, game):
+    saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
+    os.makedirs(saliency_dir, exist_ok=True)
+    runner.saliency_path = os.path.join(saliency_dir, "saliency")
+
   def eval_expert(self, phase, phase_dir, game, nb_day, mode=False, heatmap=False):
     # llamn_path must be non-False if it's not the first day, but don't need to be
     # exact because we load from a checkpoint, not from a previous llamn network
@@ -186,65 +254,47 @@ class MainEvalRunner:
       checkpoint_nb = checkpointer.get_latest_checkpoint_number(runner._checkpoint_dir)
       runner._agent._replay.load(runner._checkpoint_dir, checkpoint_nb)
       all_states = runner._sess.run(runner._agent._replay.states)
-      random_idx = np.random.choice(all_states.shape[0], NB_STATES_2, replace=False)
-      sample_states = all_states[random_idx]
+
+      # Pendulum grid state
+      if game.name.startswith('Pendulum'):
+        theta = np.linspace(-np.pi, np.pi, 21)
+        theta_dot = np.linspace(-8, 8, 51)
+        theta = theta.repeat(51)[..., np.newaxis]
+        theta_dot = np.tile(theta_dot, 21)[..., np.newaxis]
+        states = np.hstack((np.cos(theta), np.sin(theta), theta_dot))
+        env = runner._environment
+        states = (states - env.min_observation) / (env.max_observation - env.min_observation)
+        states = 2 * states - 1
+
+        X = np.zeros((states.shape[0], env.n_features))
+        X[:, :env.n_informative] = states
+        X[:, env.n_informative: env.n_informative + env.n_redundant] = \
+            np.dot(X[:, :env.n_informative], env.redundant_comatrix)
+
+        n = env.n_informative + env.n_redundant
+        X[:, n: n + env.n_repeated] = X[:, env.indices_copy]
+        X[:, -env.n_useless:] = np.random.normal(0, 1, env.n_useless)
+        sample_states = X
+
+      else:
+        random_idx = np.random.choice(all_states.shape[0], NB_STATES_2, replace=False)
+        sample_states = all_states[random_idx]
+
       os.makedirs(f'data/all_states/states_{NB_STATES}', exist_ok=True)
       state_file = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy')
       np.save(state_file, sample_states)
       return
 
     elif mode == 'features':
-      print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
-      os.makedirs(result_dir, exist_ok=True)
-      runner._agent._build_features_op()
-      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-
-      features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
-
-      actions = np.zeros(NB_STATES_2, np.float32)
-      actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
-                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
-                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
-
-      q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
-      q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.q_values,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.q_values,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
+      self.save_features(phase_dir, runner, game)
       return
 
     elif mode == 'saliency':
-      print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
-      os.makedirs(result_dir, exist_ok=True)
-      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
-      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
-
-      saliency_sums = np.empty(100)
-      saliency_means = np.empty((100, *all_states.shape[1:-1]))
-      for i, state in enumerate(all_states[:100, ...]):
-        saliency = runner._agent.compute_saliency(state[np.newaxis])
-        saliency_sums[i] = saliency.sum()
-        saliency_means[i] = saliency
-      saliency_means = saliency_means.mean(axis=0)
-      np.save(saliency_sum_file, saliency_sums)
-      np.save(saliency_mean_file, saliency_means)
+      self.save_saliency(phase_dir, runner, game)
       return
 
     elif mode == 'saliency_ep':
-      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
-      os.makedirs(saliency_dir, exist_ok=True)
-      runner.saliency_path = os.path.join(saliency_dir, "saliency")
+      self.save_saliency_ep(phase, runner, game)
 
     if heatmap:
       runner.features_heatmap = True
@@ -254,66 +304,22 @@ class MainEvalRunner:
   def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False, heatmap=False):
     runner = MyLLAMNRunner(phase_dir, self.nb_actions, games, [], MyLLAMNAgent)
     runner.delay = self.delay
+    game = games[agent_ind]
+    runner._agent.ind_expert = agent_ind
 
     if mode == 'save_state':
       return
 
     elif mode == 'features':
-      game = games[agent_ind]
-      print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
-      os.makedirs(result_dir, exist_ok=True)
-      runner._agent._build_features_op()
-      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-
-      features = np.zeros((NB_STATES_2, 512), np.float32)
-      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
-
-      actions = np.zeros(NB_STATES_2, np.float32)
-      actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
-                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax[agent_ind],
-                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
-
-      q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
-      q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
-                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-      q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_qvalues[agent_ind],
-                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-      np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
+      self.save_features(phase_dir, runner, game)
       return
 
     elif mode == 'saliency':
-      game = games[agent_ind]
-      runner._agent.ind_expert = agent_ind
-      print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
-      os.makedirs(result_dir, exist_ok=True)
-      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
-      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
-
-      saliency_sums = np.empty(100)
-      saliency_means = np.empty((100, *all_states.shape[1:-1]))
-      for i, state in enumerate(all_states[:100, ...]):
-        saliency = runner._agent.compute_saliency(state[np.newaxis])
-        saliency_sums[i] = saliency.sum()
-        saliency_means[i] = saliency
-      saliency_means = saliency_means.mean(axis=0)
-      np.save(saliency_sum_file, saliency_sums)
-      np.save(saliency_mean_file, saliency_means)
+      self.save_saliency(phase_dir, runner, game)
       return
 
     elif mode == 'saliency_ep':
-      game = games[agent_ind]
-      saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
-      os.makedirs(saliency_dir, exist_ok=True)
-      runner.saliency_path = os.path.join(saliency_dir, "saliency")
+      self.save_saliency_ep(phase, runner, game)
 
     if heatmap:
       runner.features_heatmap = True
