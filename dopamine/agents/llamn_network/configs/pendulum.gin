@@ -8,19 +8,19 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Games
-MasterRunner.games_names = [['Gym-Pendulum.1:5']]
+MasterRunner.games_names = [['Gym-Pendulum.1:11']]
 
 # Runner
-Runner.num_iterations = 70
-Runner.training_steps = 1000
+Runner.num_iterations = 50
+Runner.training_steps = 2500
 Runner.max_steps_per_episode = 500
 
-LLAMNRunner.num_iterations = 30
-LLAMNRunner.training_steps = 1000
+LLAMNRunner.num_iterations = 20
+LLAMNRunner.training_steps = 2500
 LLAMNRunner.max_steps_per_episode = 500
 
 # Common Expert / LLAMN
-update_horizon = 3
+update_horizon = 1
 feature_size = 512
 num_atoms = 51
 vmax = 10.
@@ -60,11 +60,11 @@ ExpertAgent.min_replay_history = 500
 ExpertAgent.update_period = 4
 ExpertAgent.target_update_period = 100
 ExpertAgent.epsilon_fn = @dqn_agent.identity_epsilon
-ExpertAgent.replay_scheme = 'prioritized'
+ExpertAgent.replay_scheme = 'uniform'
 ExpertAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
 ExpertAgent.optimizer = @tf.train.AdamOptimizer()
 
-tf.train.AdamOptimizer.learning_rate = 0.09
+tf.train.AdamOptimizer.learning_rate = 0.001
 tf.train.AdamOptimizer.epsilon = 0.0003125
 
 # AMN
