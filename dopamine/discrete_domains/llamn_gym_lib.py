@@ -48,15 +48,15 @@ class GymExpertNetwork(tf.keras.Model):
                                         name='dense_1')
     self.dense2 = tf.keras.layers.Dense(feature_size, activation=activation_fn,
                                         name='dense_2')
-    self.last_layer = tf.keras.layers.Dense(num_actions * num_atoms,
-                                            name='dense_3')
+    self.dense_output = tf.keras.layers.Dense(num_actions * num_atoms,
+                                              name='dense_out')
 
   def call(self, state):
     x = tf.cast(state, tf.float32)
     x = self.flatten(x)
     x = self.dense1(x)
     features = self.dense2(x)
-    x = self.last_layer(features)
+    x = self.dense_output(features)
 
     logits = tf.reshape(x, [-1, self.num_actions, self.num_atoms])
     probabilities = tf.keras.activations.softmax(logits)
@@ -81,9 +81,9 @@ class GymAMNNetwork(tf.keras.Model):
 
     # Not distributional
     if not self.num_atoms:
-      self.last_layer = tf.keras.layers.Dense(num_actions, name='dense_3')
+      self.dense_output = tf.keras.layers.Dense(num_actions, name='dense_out')
     else:
-      self.last_layer = tf.keras.layers.Dense(num_actions * num_atoms, name='dense_3')
+      self.dense_output = tf.keras.layers.Dense(num_actions * num_atoms, name='dense_out')
 
   def call(self, state):
     x = tf.cast(state, tf.float32)
@@ -92,11 +92,11 @@ class GymAMNNetwork(tf.keras.Model):
     features = self.dense2(x)
 
     if not self.num_atoms:
-      q_values = self.last_layer(features)
+      q_values = self.dense_output(features)
       return llamn_atari_lib.AMNNetworkType(q_values, features)
 
     else:
-      output = self.last_layer(features)
+      output = self.dense_output(features)
       logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
       probabilities = tf.keras.activations.softmax(logits)
       q_values = tf.reduce_sum(self.support * probabilities, axis=2)

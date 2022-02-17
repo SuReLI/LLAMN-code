@@ -23,6 +23,7 @@ from __future__ import print_function
 import os
 import glob
 import datetime
+import time
 
 
 from absl import app
@@ -74,6 +75,10 @@ def get_base_dir(resume, ckpt_dir):
   else:
     expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     base_dir = os.path.join(FLAGS.base_dir, expe_time)
+    while os.path.exists(base_dir):
+      time.sleep(1)
+      expe_time = 'AMN_' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+      base_dir = os.path.join(FLAGS.base_dir, expe_time)
 
   return base_dir
 

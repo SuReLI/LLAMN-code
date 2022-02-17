@@ -12,16 +12,16 @@ MasterRunner.games_names = [['Gym-Pendulum.1:11']]
 
 # Runner
 Runner.num_iterations = 50
-Runner.training_steps = 2500
-Runner.max_steps_per_episode = 500
+Runner.training_steps = 1000
+Runner.max_steps_per_episode = 200
 
-LLAMNRunner.num_iterations = 20
-LLAMNRunner.training_steps = 2500
-LLAMNRunner.max_steps_per_episode = 500
+LLAMNRunner.num_iterations = 25
+LLAMNRunner.training_steps = 1000
+LLAMNRunner.max_steps_per_episode = 200
 
 # Common Expert / LLAMN
 update_horizon = 1
-feature_size = 512
+feature_size = 32
 num_atoms = 51
 vmax = 10.
 expert_init_option = 2
@@ -32,7 +32,7 @@ n_features = 20
 GymPreprocessing.n_features = %n_features
 GymPreprocessing.n_redundant = 10
 GymPreprocessing.n_repeated = 3
-AMNAgent.replay_scheme = 'prioritized'   # Night PER
+AMNAgent.replay_scheme = 'uniform'       # Night PER
 AMNAgent.llamn_init_copy = True          # Copy weights of AMN between nights
 AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
 LLAMNRunner.buffer_prefill = None        # How to fill the night buffers (None, "copy" or "exploration")
@@ -52,6 +52,7 @@ ExpertAgent.stack_size = %stack_size
 ExpertAgent.init_option = %expert_init_option
 ExpertAgent.feature_size = %feature_size
 ExpertAgent.network = @llamn_gym_lib.GymExpertNetwork
+ExpertAgent.distributional_night = %distributional_night
 ExpertAgent.num_atoms = %num_atoms
 ExpertAgent.vmax = %vmax
 ExpertAgent.gamma = 0.99
