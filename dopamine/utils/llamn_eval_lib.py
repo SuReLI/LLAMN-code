@@ -115,7 +115,7 @@ class MyLLAMNAgent(SaliencyAgent, AMNAgent):
 
 class MyExpertRunner(EvalRunner, ExpertRunner):
 
-  def evaluate(self, num_eps):
+  def evaluate(self, num_eps, disp=True):
     self._agent.eval_mode = True
 
     game_name = self._environment.name.capitalize()
@@ -127,17 +127,21 @@ class MyExpertRunner(EvalRunner, ExpertRunner):
       steps, reward = self._run_one_episode()
       total_steps += steps
       total_reward += reward
-      print("    Reward:", reward)
+      if disp:
+        print("    Reward:", reward)
 
     self._environment.close()
-    print("    ----------------")
-    print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
-    print("    Mean number of steps:", total_steps / num_eps)
+    if disp:
+      print("    ----------------")
+      print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
+      print("    Mean number of steps:", total_steps / num_eps)
+    else:
+      print(f"{total_reward / num_eps:.02f}")
 
 
 class MyLLAMNRunner(EvalRunner, LLAMNRunner):
 
-  def evaluate_one_agent(self, agent_index, num_eps):
+  def evaluate_one_agent(self, agent_index, num_eps, disp=True):
     self._game_index = agent_index
     game_name = self._names[self._game_index]
     print('  \033[34m', game_name, '\033[0m', sep='')
@@ -149,13 +153,17 @@ class MyLLAMNRunner(EvalRunner, LLAMNRunner):
       steps, reward = self._run_one_episode()
       total_steps += steps
       total_reward += reward
-      print("    Reward:", reward)
+      if disp:
+        print("    Reward:", reward)
 
     self._environment.close()
     game_name = self._environment.name.capitalize()
-    print("    ----------------")
-    print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
-    print("    Mean number of steps:", total_steps / num_eps)
+    if disp:
+      print("    ----------------")
+      print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
+      print("    Mean number of steps:", total_steps / num_eps)
+    else:
+      print(f"{total_reward / num_eps:.02f}")
 
 
 def create_expert(sess, environment, llamn_path, name, summary_writer=None):
@@ -164,7 +172,7 @@ def create_expert(sess, environment, llamn_path, name, summary_writer=None):
 
 
 def should_evaluate(phase, game, name_filter, name_exclude):
-  phase_game = os.path.join(phase, str(game))
+  phase_game = os.path.join(phase, game.name)
   return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 
@@ -237,7 +245,7 @@ class MainEvalRunner:
     os.makedirs(saliency_dir, exist_ok=True)
     runner.saliency_path = os.path.join(saliency_dir, "saliency")
 
-  def eval_expert(self, phase, phase_dir, game, nb_day, mode=False, heatmap=False):
+  def eval_expert(self, phase, phase_dir, game, nb_day, mode=False, heatmap=False, disp=True):
     # llamn_path must be non-False if it's not the first day, but don't need to be
     # exact because we load from a checkpoint, not from a previous llamn network
     runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
@@ -299,9 +307,9 @@ class MainEvalRunner:
     if heatmap:
       runner.features_heatmap = True
 
-    runner.evaluate(self.num_eps)
+    runner.evaluate(self.num_eps, disp)
 
-  def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False, heatmap=False):
+  def eval_llamn(self, phase, phase_dir, games, agent_ind, mode=False, heatmap=False, disp=True):
     runner = MyLLAMNRunner(phase_dir, self.nb_actions, games, [], MyLLAMNAgent)
     runner.delay = self.delay
     game = games[agent_ind]
@@ -324,9 +332,9 @@ class MainEvalRunner:
     if heatmap:
       runner.features_heatmap = True
 
-    runner.evaluate_one_agent(agent_ind, self.num_eps)
+    runner.evaluate_one_agent(agent_ind, self.num_eps, disp)
 
-  def run(self, all_games, phase, nb_day, mode=False, heatmap=False):
+  def run(self, all_games, phase, nb_day, mode=False, heatmap=False, disp=True):
     """Main entrypoint for running and generating visualizations"""
 
     phase = phase + '_' + str(nb_day)
@@ -340,9 +348,9 @@ class MainEvalRunner:
     if phase.startswith('day'):
       print('\033[33mDay', nb_day, '\033[0m')
       for game in games:
-        self.eval_expert(phase, phase_dir, game, nb_day, mode, heatmap)
+        self.eval_expert(phase, phase_dir, game, nb_day, mode, heatmap, disp)
 
     else:
       print('\033[33mNight', nb_day, '\033[0m')
       for agent_index in range(len(games)):
-        self.eval_llamn(phase, phase_dir, games, agent_index, mode, heatmap)
+        self.eval_llamn(phase, phase_dir, games, agent_index, mode, heatmap, disp)

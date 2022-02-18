@@ -112,7 +112,7 @@ def create_agent(sess, environment, summary_writer=None):
 
 
 def should_evaluate(game, name_filter, name_exclude):
-  return re.search(name_filter, game, re.I) and not re.search(name_exclude, game, re.I)
+  return re.search(name_filter, game.name, re.I) and not re.search(name_exclude, game.name, re.I)
 
 
 class MainEvalRunner:

@@ -175,7 +175,7 @@ def create_expert(sess, environment, llamn_path, name, summary_writer=None):
 
 
 def should_evaluate(phase, game, name_filter, name_exclude):
-  phase_game = os.path.join(phase, str(game))
+  phase_game = os.path.join(phase, game.name)
   return re.search(name_filter, phase_game, re.I) and not re.search(name_exclude, phase_game, re.I)
 
 

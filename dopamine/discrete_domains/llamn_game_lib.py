@@ -60,7 +60,7 @@ def create_game(game_name, render=False):
     return ProcGenGame(game_name, render)
 
   elif game_name.startswith('Gym'):
-    return GymGame(game_name)
+    return GymGame(game_name, render)
 
   else:
     return AtariGame(game_name, True)
@@ -98,12 +98,13 @@ class ModifiedAtariPreprocessing(AtariPreprocessing):
 class GymPreprocessing(gym.Wrapper):
   """A Wrapper class around Gym environments."""
 
-  def __init__(self, env, name, level, n_features, n_redundant, n_repeated):
+  def __init__(self, env, name, level, n_features, n_redundant, n_repeated, render=False):
     super().__init__(env)
 
     self.name = name
     self.level = level
     self.game_over = False
+    self._render = render
 
     self.n_informative = self.observation_space.shape[0]
     self.n_features = n_features
@@ -130,6 +131,10 @@ class GymPreprocessing(gym.Wrapper):
   def reset(self, **kwargs):
     observation = self.env.reset(**kwargs)
     return self.randomize(observation)
+
+  def render(self, mode='human'):
+    if self._render:
+      super().render(mode)
 
   def step(self, action):
     action = self.action_mapping[action]
@@ -230,12 +235,14 @@ class ProcGenGame(Game):
 
 class GymGame(Game):
 
-  def __init__(self, game_name):
+  def __init__(self, game_name, render=False):
     if '.' in game_name:
       game_name, infos = game_name.split('.')
       self.level = int(infos)
     else:
       self.level = 1
+
+    self.render = render
 
     game_name = game_name[4:]
     super().__init__(game_name)
@@ -251,7 +258,7 @@ class GymGame(Game):
     env = gym.make(self.env_name)
     if isinstance(env, TimeLimit):
       env = env.env
-    env = GymPreprocessing(env, self.name, self.level)
+    env = GymPreprocessing(env, self.name, self.level, render=self.render)
     return env
 
 

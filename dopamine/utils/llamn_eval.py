@@ -26,6 +26,7 @@ flags.DEFINE_integer('max_steps', 10000, 'Limit of steps to run.')
 flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the environment.', short_name='d')
 flags.DEFINE_enum('mode', None, ['save_state', 'saliency_ep', 'saliency', 'features'], 'The mode of evaluation')
 flags.DEFINE_boolean('features_heatmap', False, 'Display features heatmap')
+flags.DEFINE_boolean('no_disp', False, 'Only output mean')
 
 FLAGS = flags.FLAGS
 
@@ -49,7 +50,7 @@ def main(_):
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
   games_names = gin.query_parameter('MasterRunner.games_names')
 
-  render = (FLAGS.mode is None)
+  render = (FLAGS.mode is None and not FLAGS.no_disp)
   all_games = [create_games(list_names, render=render) for list_names in games_names]
 
   nb_actions = max([game.num_actions for game_list in all_games
@@ -69,12 +70,12 @@ def main(_):
                                          name_filter=FLAGS.filter,
                                          name_exclude=FLAGS.exclude,
                                          num_eps=FLAGS.num_eps,
-                                         delay=FLAGS.delay,
+                                         delay=0 if FLAGS.no_disp else FLAGS.delay,
                                          root_dir=expe_dir)
 
   for day, games in enumerate(all_games):
     for phase in ('day', 'night'):
-      runner.run(games, phase, day, FLAGS.mode, FLAGS.features_heatmap)
+      runner.run(games, phase, day, FLAGS.mode, FLAGS.features_heatmap, not FLAGS.no_disp)
 
 
 if __name__ == '__main__':
