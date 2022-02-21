@@ -172,13 +172,15 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         with open(save_file, 'wb') as file:
             pickle.dump(fig, file)
     else:
-        n_states = int(actions.shape[0]**0.5)
-        states = load_states(game_name, n_states)
-
-        callback = functools.partial(onpick, states)
-        fig.canvas.mpl_connect('pick_event', callback)
+        try:
+            n_states = int(actions.shape[0]**0.5)
+            states = load_states(game_name, n_states)
+            callback = functools.partial(onpick, states)
+            fig.canvas.mpl_connect('pick_event', callback)
+        except AssertionError:
+            pass
         plt.show(block=blocking)
-        plt.pause(0.01)
+        plt.pause(0.05)
 
 def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
              display=False, save_file=None, merge=None, blocking=True):
@@ -260,11 +262,14 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         with open(save_file, 'wb') as file:
             pickle.dump(fig, file)
     else:
-        n_states = int(actions.shape[0]**0.5)
-        states = load_states(game_name, n_states)
+        try:
+            n_states = int(actions.shape[0]**0.5)
+            states = load_states(game_name, n_states)
+            callback = functools.partial(onpick, states)
+            fig.canvas.mpl_connect('pick_event', callback)
+        except AssertionError:
+            pass
 
-        callback = functools.partial(onpick, states)
-        fig.canvas.mpl_connect('pick_event', callback)
         plt.show(block=blocking)
         plt.pause(0.05)
 

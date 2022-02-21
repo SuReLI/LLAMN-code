@@ -68,18 +68,18 @@ def create_game(game_name, render=False):
 
 def build_variant(variant):
   if variant is None:        # No variant
-      return lambda image: image
+    return lambda image: image
   elif variant == "VHFlip":
-      return lambda image: np.flip(image, (0, 1))
+    return lambda image: np.flip(image, (0, 1))
   elif variant == "VFlip":
-      return lambda image: np.flip(image, 0)
+    return lambda image: np.flip(image, 0)
   elif variant == "HFlip":
-      return lambda image: np.flip(image, 1)
+    return lambda image: np.flip(image, 1)
   elif variant == "Noisy":
-      noise = np.random.normal(0, 3, (84, 84, 1)).astype(np.uint8)
-      return lambda image: image + noise
+    noise = np.random.normal(0, 3, (84, 84, 1)).astype(np.uint8)
+    return lambda image: image + noise
   elif variant == "Negative":
-      return lambda image: (255 - image)
+    return lambda image: (255 - image)
   raise ValueError("Variant name invalid !")
 
 
@@ -98,7 +98,7 @@ class ModifiedAtariPreprocessing(AtariPreprocessing):
 class GymPreprocessing(gym.Wrapper):
   """A Wrapper class around Gym environments."""
 
-  def __init__(self, env, name, level, n_features, n_redundant, n_repeated, render=False):
+  def __init__(self, env, name, level, n_features, n_redundant, n_repeated, n_noisy, render=False):
     super().__init__(env)
 
     self.name = name
@@ -110,7 +110,8 @@ class GymPreprocessing(gym.Wrapper):
     self.n_features = n_features
     self.n_redundant = n_redundant
     self.n_repeated = n_repeated
-    self.n_useless = n_features - self.n_informative - n_redundant - n_repeated
+    self.n_noisy = n_noisy
+    self.n_useless = n_features - self.n_informative - n_redundant - n_repeated - n_noisy
 
     min_action = self.env.action_space.low[0]
     max_action = self.env.action_space.high[0]
@@ -125,7 +126,9 @@ class GymPreprocessing(gym.Wrapper):
 
     generator = np.random.default_rng(self.level)
     self.redundant_comatrix = 2 * generator.random((self.n_informative, self.n_redundant)) - 1
-    n = self.n_informative + self.n_redundant
+    fixed_generator = np.random.default_rng(0)
+    self.noisy_redundant_comatrix = 2 * fixed_generator.random((self.n_informative, self.n_noisy)) - 1
+    n = self.n_informative + self.n_redundant + self.n_noisy
     self.indices_copy = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
 
   def reset(self, **kwargs):
@@ -153,15 +156,20 @@ class GymPreprocessing(gym.Wrapper):
     X[:self.n_informative] = observation
 
     if self.n_redundant > 0:
-        X[self.n_informative: self.n_informative + self.n_redundant] = \
-            np.dot(X[:self.n_informative], self.redundant_comatrix)
+      X[self.n_informative: self.n_informative + self.n_redundant] = \
+          np.dot(X[:self.n_informative], self.redundant_comatrix)
+
+    if self.n_noisy > 0:
+      n = self.n_informative + self.n_redundant
+      X[n:n + self.n_noisy] = np.dot(X[:self.n_informative], self.noisy_redundant_comatrix)
+      X[n:n + self.n_noisy] += np.random.normal(0, 0.05, self.n_noisy)
 
     if self.n_repeated > 0:
-        n = self.n_informative + self.n_redundant
-        X[n: n + self.n_repeated] = X[self.indices_copy]
+      n = self.n_informative + self.n_redundant + self.n_noisy
+      X[n: n + self.n_repeated] = X[self.indices_copy]
 
     if self.n_useless > 0:
-        X[-self.n_useless:] = np.random.normal(0, 1, self.n_useless)
+      X[-self.n_useless:] = np.random.normal(0, 1, self.n_useless)
 
     return X
 
@@ -174,10 +182,10 @@ class Game(ABC):
 
     self.variant = None
     for variant in self.variants:
-        if game_name.endswith(variant):
-            self.name = game_name[:-len(variant)]
-            self.variant = variant
-            break
+      if game_name.endswith(variant):
+        self.name = game_name[:-len(variant)]
+        self.variant = variant
+        break
     else:
       self.name = game_name
 

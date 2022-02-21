@@ -193,26 +193,41 @@ class MainEvalRunner:
     runner._agent._build_features_op()
     all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
 
-    features = np.zeros((NB_STATES_2, 64), np.float32)
-    features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-    features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-    np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
+    if game.name.startswith('Pendulum'):
+      all_states = all_states[:-1, ..., np.newaxis]
+      features = runner._sess.run(runner._agent.all_outputs.features,
+                                  feed_dict={runner._agent.all_states_ph: all_states})
+      np.save(os.path.join(result_dir, 'features.npy'), features)
 
-    actions = np.zeros(NB_STATES_2, np.float32)
-    actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
-                                                feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-    actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
-                                                feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-    np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
+      actions = runner._sess.run(runner._agent.all_q_argmax,
+                                 feed_dict={runner._agent.all_states_ph: all_states})
+      np.save(os.path.join(result_dir, 'actions.npy'), actions)
 
-    q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
-    q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_values,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
-    q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_values,
-                                                 feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
-    np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
+      q_values = runner._sess.run(runner._agent.all_q_values,
+                                  feed_dict={runner._agent.all_states_ph: all_states})
+      np.save(os.path.join(result_dir, 'qvalues.npy'), q_values)
+
+    else:
+      features = np.zeros((NB_STATES_2, 64), np.float32)
+      features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'features_{int(NB_STATES_2**0.5)}.npy'), features)
+
+      actions = np.zeros(NB_STATES_2, np.float32)
+      actions[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_argmax,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      actions[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_argmax,
+                                                  feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'actions_{int(NB_STATES_2**0.5)}.npy'), actions)
+
+      q_values = np.zeros((NB_STATES_2, game.num_actions), np.float32)
+      q_values[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_q_values,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
+      q_values[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_q_values,
+                                                   feed_dict={runner._agent.all_states_ph: all_states[NB_STATES_2//2:]})
+      np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
 
   def save_saliency(self, phase_dir, runner, game):
       print('  \033[34m', game.name, '\033[0m', sep='')
