@@ -12,7 +12,7 @@ fi
 # Modify `states/` symbolic link
 ln -sfn "$states_dir" states
 
-for dir in runs/AMN_*/*/* runs/Transfer_*/day_0/ runs/Transfer_*/day_1/*
+for dir in runs/**/AMN_*/*/* runs/**/Transfer_*/day_0/ runs/**/Transfer_*/day_1/*
 do
 
     if [ ! -f "${dir}/actions_${nb_states}.npy" ]

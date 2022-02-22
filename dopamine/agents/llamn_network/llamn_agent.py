@@ -36,6 +36,7 @@ class AMNAgent:
                sleeping_memory=None,
                feature_weight=0.01,
                ewc_weight=0.1,
+               weight_regu=0.0,
                feature_size=512,
                observation_shape=atari_lib.NATURE_DQN_OBSERVATION_SHAPE,
                observation_dtype=atari_lib.NATURE_DQN_DTYPE,
@@ -90,6 +91,7 @@ class AMNAgent:
     self.llamn_init_copy = llamn_init_copy
     self.feature_weight = feature_weight
     self.ewc_weight = ewc_weight
+    self.weight_regu = weight_regu
 
     # Rainbow Init
     expert_vmax = float(expert_vmax)
@@ -366,6 +368,12 @@ class AMNAgent:
 
       if ewc_loss:
         loss = self.ewc_weight * ewc_loss + (1 - self.ewc_weight) * loss
+
+      if self.weight_regu > 0:
+        regularization_loss = 0
+        for var in self.convnet.variables:
+          regularization_loss += tf.compat.v1.nn.l2_loss(var)
+        loss += self.weight_regu * regularization_loss
 
       xent_losses.append(xent_loss)
       l2_losses.append(l2_loss)

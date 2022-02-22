@@ -273,11 +273,7 @@ class MainEvalRunner:
         return
       self.saved_games.append(game.name)
       print(f"  \033[34mSaving states from {game.name}\033[0m", sep='')
-      runner._agent._replay = MyRainbowAgent._build_replay_buffer(runner._agent, False)
-      checkpoint_nb = checkpointer.get_latest_checkpoint_number(runner._checkpoint_dir)
-      runner._agent._replay.load(runner._checkpoint_dir, checkpoint_nb)
-      all_states = runner._sess.run(runner._agent._replay.states)
-
+      
       # Pendulum grid state
       if game.name.startswith('Pendulum'):
         theta = np.linspace(-np.pi, np.pi, 21)
@@ -295,16 +291,26 @@ class MainEvalRunner:
             np.dot(X[:, :env.n_informative], env.redundant_comatrix)
 
         n = env.n_informative + env.n_redundant
+        X[:, n: n+env.n_noisy] = np.dot(X[:, :env.n_informative], env.noisy_redundant_comatrix)
+        X[:, n: n+env.n_noisy] += np.random.normal(0, 0.05, env.n_noisy)
+
+        n = env.n_informative + env.n_redundant + env.n_noisy
         X[:, n: n + env.n_repeated] = X[:, env.indices_copy]
+
         X[:, -env.n_useless:] = np.random.normal(0, 1, env.n_useless)
         sample_states = X
 
       else:
+        runner._agent._replay = MyRainbowAgent._build_replay_buffer(runner._agent, False)
+        checkpoint_nb = checkpointer.get_latest_checkpoint_number(runner._checkpoint_dir)
+        runner._agent._replay.load(runner._checkpoint_dir, checkpoint_nb)
+        all_states = runner._sess.run(runner._agent._replay.states)
+
         random_idx = np.random.choice(all_states.shape[0], NB_STATES_2, replace=False)
         sample_states = all_states[random_idx]
 
       os.makedirs(f'data/all_states/states_{NB_STATES}', exist_ok=True)
-      state_file = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy')
+      state_file = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.v2.npy')
       np.save(state_file, sample_states)
       return
 
@@ -366,6 +372,8 @@ class MainEvalRunner:
         self.eval_expert(phase, phase_dir, game, nb_day, mode, heatmap, disp)
 
     else:
+      if mode == 'save_state':
+        return
       print('\033[33mNight', nb_day, '\033[0m')
       for agent_index in range(len(games)):
         self.eval_llamn(phase, phase_dir, games, agent_index, mode, heatmap, disp)

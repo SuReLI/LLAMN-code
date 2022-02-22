@@ -63,7 +63,7 @@ def create_game(game_name):
 
     return gym.make(f"{game_name}-v0")
 
-def get_meaning(game_name):
+def get_meaning(game_name, actions):
     try:
         env = create_game(game_name)
         meanings = np.array(env.unwrapped.get_action_meanings())
@@ -161,7 +161,7 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         title += f"{var:.2f}%, "
     ax.set_title(title)
 
-    meanings = get_meaning(game_name)
+    meanings = get_meaning(game_name, actions)
     ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
@@ -219,7 +219,7 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
 
     if display:
         # clf = KNeighborsClassifier()
-        clf = svm.SVC()
+        clf = svm.SVC(kernel='linear')
 
         kf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
         scores = []
@@ -251,7 +251,7 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         print("Can't visualize in more than 3D")
         return
 
-    meanings = get_meaning(game_name)
+    meanings = get_meaning(game_name, actions)
     ax.legend(handles=scatter.legend_elements()[0], labels=meanings)
     if save_file:
         if save_file == 'default':
