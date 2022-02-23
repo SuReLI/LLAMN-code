@@ -236,8 +236,10 @@ class ExpertRunner(TrainRunner):
     self._agent.eval_mode = False
 
   def _run_one_iteration(self, iteration):
+    if iteration == 0:
+      self._run_eval_phase(iteration)
     stats = super()._run_one_iteration(iteration)
-    self._run_eval_phase(iteration)
+    self._run_eval_phase(iteration+1)
     return stats
 
   def _save_tensorboard_summaries(self, iteration, num_episodes,
@@ -509,8 +511,10 @@ class LLAMNRunner(TrainRunner):
   def _run_one_iteration(self, iteration):
     logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
+    if iteration == 0:
+      self._run_eval_phase(iteration)
     stats = super()._run_one_iteration(iteration)
-    self._run_eval_phase(iteration)
+    self._run_eval_phase(iteration+1)
     return stats
 
   def run_experiment(self):
