@@ -131,8 +131,21 @@ class GymPreprocessing(gym.Wrapper):
     n = self.n_informative + self.n_redundant + self.n_noisy
     self.indices_copy = ((n - 1) * generator.random(self.n_repeated) + 0.5).astype(np.intp)
 
+    self.eval_mode = False
+    self.eval_index = 0
+    fixed_generator = np.random.default_rng(0)
+    high = np.array([np.pi, 1])
+    self.eval_states = [fixed_generator.uniform(low=-high, high=high) for _ in range(50)]
+
   def reset(self, **kwargs):
-    observation = self.env.reset(**kwargs)
+    if self.eval_mode:
+      self.state = self.eval_states[self.eval_index]
+      self.eval_index = (self.eval_index + 1) % len(self.eval_states)
+      self.last_u = None
+      observation = self.env.env._get_obs()
+      return self.randomize(observation)
+
+    observation = super().reset(**kwargs)
     return self.randomize(observation)
 
   def render(self, mode='human'):

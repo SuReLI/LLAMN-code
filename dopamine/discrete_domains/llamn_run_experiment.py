@@ -215,6 +215,31 @@ class ExpertRunner(TrainRunner):
     if self._start_iteration == 0:
       self._agent._load_llamn()
 
+  def _run_eval_phase(self, iteration):
+    self._agent.eval_mode = True
+    self._environment.eval_mode = True
+
+    rewards = []
+    for _ in range(50):
+      step_number, total_reward = self._run_one_episode()
+      rewards.append(total_reward)
+
+    average_reward = sum(rewards) / len(rewards)
+
+    env_name = self._environment.name
+    summary = tf.compat.v1.Summary(value=[
+        tf.compat.v1.Summary.Value(
+            tag=f'Eval/{env_name}/AverageReturns', simple_value=average_reward)
+    ])
+    self._summary_writer.add_summary(summary, iteration)
+    self._environment.eval_mode = False
+    self._agent.eval_mode = False
+
+  def _run_one_iteration(self, iteration):
+    stats = super()._run_one_iteration(iteration)
+    self._run_eval_phase(iteration)
+    return stats
+
   def _save_tensorboard_summaries(self, iteration, num_episodes,
                                   average_reward, average_steps_per_second):
     """Save statistics as tensorboard summaries."""
@@ -458,10 +483,35 @@ class LLAMNRunner(TrainRunner):
                  sum(number_steps) / time_delta)
     return num_episodes, average_returns, average_steps_per_second
 
+  def _run_eval_phase(self, iteration):
+    self._agent.eval_mode = True
+
+    for self._game_index in range(self._nb_envs):
+      self._environment.eval_mode = True
+
+      rewards = []
+      for _ in range(50):
+        step_number, total_reward = self._run_one_episode()
+        rewards.append(total_reward)
+
+      average_reward = sum(rewards) / len(rewards)
+
+      env_name = self._environment.name
+      summary = tf.compat.v1.Summary(value=[
+          tf.compat.v1.Summary.Value(
+              tag=f'Eval/{env_name}/AverageReturns', simple_value=average_reward)
+      ])
+      self._summary_writer.add_summary(summary, iteration)
+      self._environment.eval_mode = False
+
+    self._agent.eval_mode = False
+
   def _run_one_iteration(self, iteration):
     logging.info('Starting iteration %d', iteration)
     print(f'\n\tLLAMN Running iteration {iteration}')
-    super()._run_one_iteration(iteration)
+    stats = super()._run_one_iteration(iteration)
+    self._run_eval_phase(iteration)
+    return stats
 
   def run_experiment(self):
     """Runs a full experiment, spread over multiple iterations."""
