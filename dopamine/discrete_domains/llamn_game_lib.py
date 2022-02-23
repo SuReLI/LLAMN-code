@@ -133,9 +133,13 @@ class GymPreprocessing(gym.Wrapper):
 
     self.eval_mode = False
     self.eval_index = 0
-    fixed_generator = np.random.default_rng(0)
-    high = np.array([np.pi, 1])
-    self.eval_states = [fixed_generator.uniform(low=-high, high=high) for _ in range(50)]
+    theta = np.linspace(-np.pi, np.pi, 10)
+    theta_dot = np.linspace(-8, 8, 5)
+    theta = theta.repeat(5)[..., np.newaxis]
+    theta_dot = np.tile(theta_dot, 10)[..., np.newaxis]
+    states = np.hstack((np.cos(theta), np.sin(theta), theta_dot))
+    states = (states - self.min_observation) / (self.max_observation - self.min_observation)
+    self.eval_states = 2 * states - 1
 
   def reset(self, **kwargs):
     if self.eval_mode:
