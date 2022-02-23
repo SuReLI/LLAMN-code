@@ -135,21 +135,18 @@ class GymPreprocessing(gym.Wrapper):
     self.eval_index = 0
     theta = np.linspace(-np.pi, np.pi, 10)
     theta_dot = np.linspace(-8, 8, 5)
-    theta = theta.repeat(5)[..., np.newaxis]
-    theta_dot = np.tile(theta_dot, 10)[..., np.newaxis]
-    states = np.hstack((np.cos(theta), np.sin(theta), theta_dot))
-    states = (states - self.min_observation) / (self.max_observation - self.min_observation)
-    self.eval_states = 2 * states - 1
+    theta = theta.repeat(5)
+    theta_dot = np.tile(theta_dot, 10)
+    self.eval_states = np.transpose([theta, theta_dot])
 
   def reset(self, **kwargs):
-    if self.eval_mode:
-      self.state = self.eval_states[self.eval_index]
-      self.eval_index = (self.eval_index + 1) % len(self.eval_states)
-      self.last_u = None
-      observation = self.env.env._get_obs()
-      return self.randomize(observation)
-
     observation = super().reset(**kwargs)
+
+    if self.eval_mode:
+      self.env.env.state = self.eval_states[self.eval_index]
+      self.eval_index = (self.eval_index + 1) % len(self.eval_states)
+      observation = self.env.env._get_obs()
+
     return self.randomize(observation)
 
   def render(self, mode='human'):
