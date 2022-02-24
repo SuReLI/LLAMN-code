@@ -27,6 +27,7 @@ flags.DEFINE_integer('delay', 10, 'Number of ms to wait between steps in the env
 flags.DEFINE_enum('mode', None, ['save_state', 'saliency_ep', 'saliency', 'features'], 'The mode of evaluation')
 flags.DEFINE_boolean('features_heatmap', False, 'Display features heatmap')
 flags.DEFINE_boolean('no_disp', False, 'Only output mean')
+flags.DEFINE_boolean('robust', False, 'Measure Robustness')
 
 FLAGS = flags.FLAGS
 
@@ -42,12 +43,33 @@ def get_expe_dir(root_dir):
   return max(expe_list)
 
 
+def main_robust(expe_dir):
+  FLAGS.max_steps = 200
+  FLAGS.num_eps = 50
+  games_names = ["Gym-Pendulum.100:200"]
+  all_games = create_games(games_names)
+  nb_actions = max([game.num_actions for game in all_games])
+  gin.bind_parameter('LLAMNRunner.max_steps_per_episode', FLAGS.max_steps)
+
+  runner = llamn_eval_lib.MainEvalRunner(nb_actions=nb_actions,
+                                         name_filter="night_0",
+                                         name_exclude=FLAGS.exclude,
+                                         num_eps=FLAGS.num_eps,
+                                         delay=0,
+                                         root_dir=expe_dir)
+
+  runner.run_robust(all_games)
+
+
 def main(_):
   logging.get_absl_logger().disabled = True
   expe_dir = get_expe_dir(FLAGS.root_dir)
   print(f'\033[91mVisualizing networks in directory {expe_dir}\033[0m')
-
   gin.parse_config_file(os.path.join(expe_dir, 'config.gin'))
+
+  if FLAGS.robust:
+    return main_robust(expe_dir)
+
   games_names = gin.query_parameter('MasterRunner.games_names')
 
   render = (FLAGS.mode is None and not FLAGS.no_disp)

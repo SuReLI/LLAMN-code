@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import os
 import re
+import multiprocessing
 
 import tensorflow as tf
 import numpy as np
@@ -153,15 +154,17 @@ class MyLLAMNRunner(EvalRunner, LLAMNRunner):
       steps, reward = self._run_one_episode()
       total_steps += steps
       total_reward += reward
-      if disp:
+      if disp is True:
         print("    Reward:", reward)
 
     self._environment.close()
     game_name = self._environment.name.capitalize()
-    if disp:
+    if disp is True:
       print("    ----------------")
       print("    Mean reward on", game_name, "for", num_eps, "episodes:", total_reward / num_eps)
       print("    Mean number of steps:", total_steps / num_eps)
+    elif disp == "return":
+      return total_reward / num_eps
     else:
       print(f"{total_reward / num_eps:.02f}")
 
@@ -265,6 +268,7 @@ class MainEvalRunner:
     # exact because we load from a checkpoint, not from a previous llamn network
     runner = MyExpertRunner(phase_dir, game, create_expert, (nb_day > 0))
     runner.delay = self.delay
+    runner._environment.eval_mode = True
 
     if mode == 'save_state':
       if not hasattr(self, 'saved_games'):
@@ -377,3 +381,23 @@ class MainEvalRunner:
       print('\033[33mNight', nb_day, '\033[0m')
       for agent_index in range(len(games)):
         self.eval_llamn(phase, phase_dir, games, agent_index, mode, heatmap, disp)
+
+  def evaluate_proc(self, agent_index):
+    runner = MyLLAMNRunner(self.phase_dir, self.nb_actions, self.games, [], MyLLAMNAgent)
+    runner.delay = self.delay
+    runner._agent.ind_expert = agent_index
+    return runner.evaluate_one_agent(agent_index, self.num_eps, "return")  
+
+  def run_robust(self, all_games):
+    phase = "night_0"
+    self.phase_dir = os.path.join(self.root_dir, phase)
+    self.games = list(filter(lambda game: should_evaluate(phase, game, self.name_filter, self.name_exclude),
+                             all_games))
+    if not self.games:
+      return
+
+    with multiprocessing.Pool() as p:
+      means = p.map(self.evaluate_proc, range(len(self.games)))
+
+    mean_path = os.path.join(os.path.dirname(self.phase_dir), 'mean.npy')
+    np.save(mean_path, np.array(means))

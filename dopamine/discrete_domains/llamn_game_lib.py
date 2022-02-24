@@ -144,6 +144,7 @@ class GymPreprocessing(gym.Wrapper):
 
     if self.eval_mode:
       self.env.env.state = self.eval_states[self.eval_index]
+      self.env.env.last_u = None
       self.eval_index = (self.eval_index + 1) % len(self.eval_states)
       observation = self.env.env._get_obs()
 
