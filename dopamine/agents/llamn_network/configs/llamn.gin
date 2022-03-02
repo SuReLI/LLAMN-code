@@ -8,13 +8,12 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-MasterRunner.games_names = [['Carnival', 'DemonAttack', 'SpaceInvaders', 'VideoPinball'],
-                            ['Assault', 'Breakout', 'Centipede', 'Pong']]
+MasterRunner.games_names = [['Breakout', 'Carnival', 'Pong', 'SpaceInvaders', 'VideoPinball']]
 MasterRunner.sticky_actions = True
 
 # Runner
-Runner.num_iterations = 100
-Runner.training_steps = 250000
+Runner.num_iterations = 60
+Runner.training_steps = 50000
 Runner.max_steps_per_episode = 27000
 
 LLAMNRunner.num_iterations = 15

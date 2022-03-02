@@ -16,6 +16,7 @@ from sklearn import decomposition, cross_decomposition, svm
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold
+from sklearn.manifold import TSNE
 
 
 MERGING = {"Pong": [(1, 0), (4, 2), (5, 3)]}
@@ -32,9 +33,12 @@ def parse_args():
                         help="Actions to merge together")
     parser.add_argument('-d', '--display', action='store_true',
                         help="Display KNN/SVM in pls")
+    parser.add_argument('--mean', action='store_true', help="Give the mean score on all files")
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--pls', action='store_true',
                        help="Display PLS instead of PCA")
+    group.add_argument('--tsne', action='store_true',
+                       help="Display t-SNE instead of PCA")
     group.add_argument('-p', '--saliency-sum', action='store_true',
                        help="Compute sum of saliency activations")
     group.add_argument('-s', '--saliency-mean', action='store_true',
@@ -182,8 +186,25 @@ def disp_pca(feature_file, action_file, n_components=2, save_file=None, merge=No
         plt.show(block=blocking)
         plt.pause(0.05)
 
-def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
-             display=False, save_file=None, merge=None, blocking=True):
+def compute_svm_score(features, actions, use_svm=True):
+    if use_svm:
+        clf = svm.SVC(kernel='linear')
+    else:
+        clf = KNeighborsClassifier()
+
+    kf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
+    scores = []
+    for train_id, test_id in kf.split(features, actions):
+        x_train, y_train = features[train_id], actions[train_id]
+        x_test, y_test = features[test_id], actions[test_id]
+        clf.fit(x_train, y_train)
+        score = clf.score(x_test, y_test)
+        scores.append(score * 100)
+
+    return np.array(scores)
+
+def disp_pls(feature_file, action_file, qvalues_file, n_components=2, use_tsne=False,
+             display=False, save_file=None, merge=None, blocking=True, return_score=False):
     features = np.load(feature_file)
     actions = np.load(action_file).astype(np.int32)
     qvalues = np.load(qvalues_file)
@@ -201,39 +222,22 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         for elt in merge:
             actions[actions == elt[0]] = elt[1]
 
-    pls = cross_decomposition.PLSRegression(n_components=n_components)
-    if False:
-        target = qvalues
-    else:
-        target = OneHotEncoder().fit_transform(actions.reshape(-1, 1)).toarray()
-    components = pls.fit_transform(features, target)[0]
+    # target = qvalues
+    target = OneHotEncoder().fit_transform(actions.reshape(-1, 1)).toarray()
 
-    # explained_variance_ratio = np.var(components, axis=0) / np.var(features, axis=0).sum()
-    # exp_var = [v*100 for v in explained_variance_ratio]
-    # total_var = sum(explained_variance_ratio) * 100
-    # print(f"Experiment {os.path.dirname(feature_file)}")
-    # print(f"Explained variance: {total_var:.2f}%")
-    # print(f"Component wise: ", end='')
-    # for v in explained_variance_ratio:
-    #     print(f"{v*100:.2f}%, ", end='')
+    if use_tsne:
+        pls = TSNE(n_components=n_components, init='pca', learning_rate='auto')
+        components = pls.fit_transform(features, target)
+    else:
+        pls = cross_decomposition.PLSRegression(n_components=n_components)
+        components = pls.fit_transform(features, target)[0]
 
     if display:
-        # clf = KNeighborsClassifier()
-        clf = svm.SVC(kernel='linear')
-
-        kf = RepeatedStratifiedKFold(n_splits=5, n_repeats=2)
-        scores = []
-        for train_id, test_id in kf.split(components, actions):
-            x_train, y_train = components[train_id], actions[train_id]
-            x_test, y_test = components[test_id], actions[test_id]
-            clf.fit(x_train, y_train)
-            score = clf.score(x_test, y_test)
-            scores.append(score * 100)
-
-        scores = np.array(scores)
+        scores = compute_svm_score(features, actions)
+        if return_score:
+            return scores
         print(f"Experiment {os.path.dirname(feature_file)}")
         print(f"Final score: {scores.mean():.2f} ± {scores.std():.2f}\n")
-
 
     fig = plt.figure(feature_file)
     if n_components == 2:
@@ -256,7 +260,7 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
     if save_file:
         if save_file == 'default':
             n = int(features.shape[0] ** 0.5)
-            save_file = f"all_figs/{os.path.dirname(feature_file)}/feature{'3D' if n_components == 3 else ''}_{n}.pickle"
+            save_file = f"figs/{os.path.dirname(feature_file)}/feature{'3D' if n_components == 3 else ''}_{n}.pickle"
         os.makedirs(os.path.dirname(save_file), exist_ok=True)
         print("Saving in", save_file)
         with open(save_file, 'wb') as file:
@@ -270,6 +274,9 @@ def disp_pls(feature_file, action_file, qvalues_file, n_components=2,
         except AssertionError:
             pass
 
+        plt.axis('off')
+        plt.xticks([])
+        plt.yticks([])
         plt.show(block=blocking)
         plt.pause(0.05)
 
@@ -403,8 +410,54 @@ def disp_saliencies(phase_id, day_dir, night_dir, disp_mean, blocking=True):
 
             axes[i].set_title(game)
 
+    fig.tight_layout()
+    plt.subplots_adjust(bottom=0.1, wspace=0.1, hspace=0)
+
+    # ax = fig.add_subplot(3, 3, (7, 9))
+    # img = ax.imshow(np.array([[0, 40]]), cmap='Reds')
+    # img.set_visible(False)
+    # ax.set_axis_off()
+    # fig.colorbar(img, ax=ax, orientation='horizontal')
+
     plt.show(block=blocking)
 
+def disp_all_saliencies(files):
+    fig, axes = plt.subplots(2, 3, figsize=(20, 5))
+    num_levels = list(map(str, [2, 3, 4, 6, 12, 24]))
+    axes = axes.flatten()
+
+    for i, expe_dir in enumerate(files):
+        day_dir = os.path.join(files[0], 'day_0')
+        night_dir = os.path.join(expe_dir, 'night_0')
+
+        day_data = np.load(os.path.join(day_dir, 'Pendulum-1', 'mean_saliency_activations.npy'))
+        night_data = np.load(os.path.join(night_dir, 'Pendulum-1', 'mean_saliency_activations.npy'))
+
+
+        day_mask = np.vstack((np.zeros_like(day_data), np.ones_like(day_data)))
+        night_mask = np.vstack((np.ones_like(night_data), np.zeros_like(night_data)))
+
+        day_data = np.vstack((day_data, np.zeros_like(day_data)))
+        day_data = np.ma.masked_array(day_data, day_mask)
+
+        night_data = np.vstack((np.zeros_like(night_data), night_data))
+        night_data = np.ma.masked_array(night_data, night_mask)
+
+        axes[i].imshow(day_data, cmap='Reds', vmin=0, vmax=40)
+        axes[i].imshow(night_data, cmap='Reds', vmin=0, vmax=10)
+        axes[i].set_axis_off()
+        axes[i].set_title("N_levels = " + num_levels[i])
+
+    fig.tight_layout()
+    plt.subplots_adjust(bottom=0.1, wspace=0.1, hspace=0)
+
+    ax = fig.add_subplot(3, 3, (7, 9))
+    img = ax.imshow(np.array([[0, 40]]), cmap='Reds')
+    img.set_visible(False)
+    ax.set_axis_off()
+    fig.colorbar(img, ax=ax, orientation='horizontal')
+
+    plt.show()
 
 def main():
     args = parse_args()
@@ -467,7 +520,9 @@ def main():
                 disp_saliencies(phase_id, day_dir, night_dir, args.saliency_mean, blocking)
 
     else:
+        scores = {}
         for feature_file in args.files:
+            print("Processing", feature_file)
             blocking = (len(args.files) > 4) or feature_file == args.files[-1]
 
             # Directory
@@ -481,26 +536,46 @@ def main():
                 action_file = feature_file.replace('features.', 'actions.')
                 assert os.path.exists(action_file), f"No action file found: {action_file}"
 
-                if not args.pls:
-                    disp_pca(feature_file, action_file, args.nb_components,
-                             args.save_file, args.merge, blocking)
+                if args.pls or args.tsne:
+                    qvalues_file = feature_file.replace('features.', 'qvalues.')
+                    if args.mean:
+                        env_name = feature_file.rsplit('/', 2)[1]
+                        if env_name not in scores:
+                            scores[env_name] = []
+                        # print(f"Computing file {feature_file}")
+                        try:
+                            env_scores = disp_pls(feature_file, action_file, qvalues_file,
+                                                args.nb_components, args.tsne, args.display,
+                                                args.save_file, args.merge,
+                                                blocking, return_score=True)
+                            scores[env_name].append(env_scores.mean())
+                        except ValueError:
+                            continue
+                    else:
+                        disp_pls(feature_file, action_file, qvalues_file, args.nb_components,
+                                args.tsne, args.display, args.save_file, args.merge, blocking)
 
                 else:
-                    qvalues_file = feature_file.replace('features.', 'qvalues.')
-                    disp_pls(feature_file, action_file, qvalues_file, args.nb_components,
-                             args.display, args.save_file, args.merge, blocking)
+                    disp_pca(feature_file, action_file, args.nb_components,
+                             args.save_file, args.merge, blocking)
 
             # Matplotlib figure
             elif feature_file.endswith('.pickle'):
                 with open(feature_file, 'rb') as file:
                     fig = pickle.load(file)
                 ax = fig.gca()
-                ax.set_title(feature_file + "\n" + ax.get_title())
+                # ax.set_title(feature_file + "\n" + ax.get_title())
+                ax.axis('off')
                 plt.show(block=blocking)
                 plt.pause(0.01)
 
             else:
-                raise ValueError("Invalid file: not a feature file nor a figure file")
+                raise ValueError("Invalid file: not a feature file nor a figure file: " + feature_file)
+
+        if args.mean:
+            for key, value in scores.items():
+                value = np.array(value)
+                print(f"{key}: {value.mean():.2f} ± {value.std():.2f}")
 
 
 if __name__ == '__main__':

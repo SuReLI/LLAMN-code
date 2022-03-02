@@ -194,7 +194,13 @@ class MainEvalRunner:
     result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
     os.makedirs(result_dir, exist_ok=True)
     runner._agent._build_features_op()
-    all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
+
+    state_path = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy')
+    if not os.path.exists(state_path):
+      print(f"\033[34mERROR ! No state file found for game {game.name}\033[0m")
+      return
+
+    all_states = np.load(state_path)
 
     if game.name.startswith('Pendulum'):
       all_states = all_states[:-1, ..., np.newaxis]
@@ -211,7 +217,8 @@ class MainEvalRunner:
       np.save(os.path.join(result_dir, 'qvalues.npy'), q_values)
 
     else:
-      features = np.zeros((NB_STATES_2, 64), np.float32)
+      feature_size = runner._agent.all_outputs.features.shape[1].value
+      features = np.zeros((NB_STATES_2, feature_size), np.float32)
       features[:NB_STATES_2//2] = runner._sess.run(runner._agent.all_outputs.features,
                                                    feed_dict={runner._agent.all_states_ph: all_states[:NB_STATES_2//2]})
       features[NB_STATES_2//2:] = runner._sess.run(runner._agent.all_outputs.features,
@@ -233,30 +240,36 @@ class MainEvalRunner:
       np.save(os.path.join(result_dir, f'qvalues_{int(NB_STATES_2**0.5)}.npy'), q_values)
 
   def save_saliency(self, phase_dir, runner, game):
-      print('  \033[34m', game.name, '\033[0m', sep='')
-      result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
-      os.makedirs(result_dir, exist_ok=True)
-      all_states = np.load(os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.npy'))
-      saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
-      saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
+    print('  \033[34m', game.name, '\033[0m', sep='')
+    result_dir = os.path.join('data/runs', *phase_dir.split('/')[1:], game.name)
+    os.makedirs(result_dir, exist_ok=True)
 
-      if game.name.startswith("Pendulum"):
-        saliencies = runner._agent.compute_saliencies(all_states[..., np.newaxis])
-        saliency_sums = saliencies.sum(axis=1)
-        saliency_means = saliencies.mean(axis=0)
+    state_path = os.path.join(f'data/all_states/states_{NB_STATES}', game.name+'.v2.npy')
+    if not os.path.exists(state_path):
+      print(f"\033[34mERROR ! No state file found for game {game.name}\033[0m")
+      return
 
-      else:
-        size = 1000
-        saliency_sums = np.empty(size)
-        saliency_means = np.empty((size, *all_states.shape[1:-1]))
-        for i, state in enumerate(all_states[:size, ...]):
-          saliency = runner._agent.compute_saliency(state[np.newaxis])
-          saliency_sums[i] = saliency.sum()
-          saliency_means[i] = saliency
-        saliency_means = saliency_means.mean(axis=0)
+    all_states = np.load(state_path)
+    saliency_sum_file = os.path.join(result_dir, 'sum_saliency_activations.npy')
+    saliency_mean_file = os.path.join(result_dir, 'mean_saliency_activations.npy')
 
-      np.save(saliency_sum_file, saliency_sums)
-      np.save(saliency_mean_file, saliency_means)
+    if game.name.startswith("Pendulum"):
+      saliencies = runner._agent.compute_saliencies(all_states[..., np.newaxis])
+      saliency_sums = saliencies.sum(axis=1)
+      saliency_means = saliencies.mean(axis=0)
+
+    else:
+      size = 1000
+      saliency_sums = np.empty(size)
+      saliency_means = np.empty((size, *all_states.shape[1:-1]))
+      for i, state in enumerate(all_states[:size, ...]):
+        saliency = runner._agent.compute_saliency(state[np.newaxis])
+        saliency_sums[i] = saliency.sum()
+        saliency_means[i] = saliency
+      saliency_means = saliency_means.mean(axis=0)
+
+    np.save(saliency_sum_file, saliency_sums)
+    np.save(saliency_mean_file, saliency_means)
 
   def save_saliency_ep(self, phase, runner, game):
     saliency_dir = os.path.join(self.root_dir, 'agent_viz', phase, f"expert_{game.name}")
@@ -386,7 +399,7 @@ class MainEvalRunner:
     runner = MyLLAMNRunner(self.phase_dir, self.nb_actions, self.games, [], MyLLAMNAgent)
     runner.delay = self.delay
     runner._agent.ind_expert = agent_index
-    return runner.evaluate_one_agent(agent_index, self.num_eps, "return")  
+    return runner.evaluate_one_agent(agent_index, self.num_eps, "return")
 
   def run_robust(self, all_games):
     phase = "night_0"
