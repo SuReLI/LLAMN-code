@@ -1,5 +1,5 @@
 
-# Consolidation for Transfer in Reinforcement Learning
+# Distillation for Generalization in Reinforcement Learning
 
 This anonymous repository contains the code developed for the submitted paper "Neural Distillation as a State Representation Bottleneck in Reinforcement Learning".
 
