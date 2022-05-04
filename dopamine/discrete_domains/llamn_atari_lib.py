@@ -73,11 +73,11 @@ class ExpertNetwork(tf.keras.Model):
     pre_output = x
 
     if self.init_option == 3 and self.llamn_network:
+      # llamn_pre_output = self.llamn_network(state).pre_output
+      # llamn_pre_output = tf.stop_gradient(llamn_pre_output)
+      # features = tf.concat([features, llamn_pre_output], axis=1)
+      # features = self.dense_features(features)
       raise Exception("Option not valid anymore")
-      llamn_pre_output = self.llamn_network(state).pre_output
-      llamn_pre_output = tf.stop_gradient(llamn_pre_output)
-      features = tf.concat([features, llamn_pre_output], axis=1)
-      features = self.dense_features(features)
 
     output = self.dense_output(x)
     logits = tf.reshape(output, [-1, self.num_actions, self.num_atoms])
@@ -114,6 +114,10 @@ class AMNNetwork(tf.keras.Model):
         feature_size, activation=activation_fn,
         kernel_initializer=self.kernel_initializer, name='dense_1')
 
+    self.dense_adaptation = tf.keras.layers.Dense(
+        7744, activation=activation_fn,
+        kernel_initializer=self.kernel_initializer, name='adaptation')
+
     # Not distributional
     if not self.num_atoms:
       self.dense_output = tf.keras.layers.Dense(
@@ -132,7 +136,7 @@ class AMNNetwork(tf.keras.Model):
     x = self.conv2(x)
     x = self.conv3(x)
     x = self.flatten(x)
-    features = x
+    features = self.dense_adaptation(x)
     pre_output = self.dense1(x)
 
     if not self.num_atoms:

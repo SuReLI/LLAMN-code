@@ -117,7 +117,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
   def _load_llamn(self):
     if self.llamn_path:
 
-      # Initialization by weights copy
+      # Initialization by weights copy except output layer
       if self.init_option == 1:
         # We want to restore variables with names 'expert_Pong/online/conv_1:0'
         # from variables with names 'llamn/conv_1'
@@ -125,6 +125,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                      for var in self.online_convnet.variables
                      if 'dense_out' not in var.name}
 
+      # Initialization by total weights copy
       elif self.init_option == 2:
         if not self.distributional_night:
           raise Exception("Must have distributional nights to activate this option")
@@ -133,6 +134,7 @@ class ExpertAgent(rainbow_agent.RainbowAgent):
                      for var in self.online_convnet.variables
                      if 'dense_out' not in var.name}
 
+      # Initialization by feature concatenation
       elif self.init_option == 3:
         # Restore llamn variables with names 'expert_pong/online/llamn/conv_1:0'
         # from variables with names 'llamn/conv_1'

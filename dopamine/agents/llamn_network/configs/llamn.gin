@@ -8,8 +8,8 @@ import dopamine.replay_memory.prioritized_replay_buffer
 import gin.tf.external_configurables
 
 # Atari
-MasterRunner.games_names = [['Carnival', 'DemonAttack', 'SpaceInvaders', 'VideoPinball'],
-                            ['Assault', 'Breakout', 'Centipede', 'Pong']]
+MasterRunner.games_names = [['Carnival', 'Pong', 'SpaceInvaders', 'VideoPinball'],
+                            ['Breakout']]
 MasterRunner.sticky_actions = True
 
 # Runner
@@ -34,7 +34,7 @@ AMNAgent.replay_scheme = 'prioritized'   # Night PER
 AMNAgent.llamn_init_copy = False         # Copy weights of AMN between nights
 AMNAgent.optimize_loss_sum = False       # Optimize losses independently or with sum
 LLAMNRunner.buffer_prefill = None        # How to fill the night buffers (None, "copy" or "exploration")
-LLAMNRunner.nb_steps_per_steps = -1      # How many steps to do alternatively on each game
+LLAMNRunner.nb_steps_per_steps = 500     # How many steps to do alternatively on each game
                                          # Negative value means alternate episodes
 
 # Expert
